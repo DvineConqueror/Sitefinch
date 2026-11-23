@@ -156,56 +156,58 @@ fun ReviewScreen(model: WorkPhotoModel, draft: CaptureDraft, project: Project?) 
         project?.name ?: "Project", draft.note, draft.takenAtMillis, draft.utcOffsetMinutes,
         draft.location.takeIf { stampLocation },
     )
-    Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).imePadding().padding(horizontal = 18.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
-    ) {
-        PhotoImage(
-            draft.file, "Photo awaiting review",
-            Modifier.fillMaxWidth().heightIn(max = 440.dp).aspectRatio(4f / 3f),
-            if (previewStamp) stamp else null,
-        )
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
+    Column(Modifier.fillMaxSize().imePadding().padding(horizontal = 18.dp)) {
+        Column(
+            Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Column(Modifier.weight(1f)) {
-                Text("Project", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(project?.name ?: "Choose a project", style = MaterialTheme.typography.titleMedium)
+            PhotoImage(
+                draft.file, "Photo awaiting review",
+                Modifier.fillMaxWidth().heightIn(max = 440.dp).aspectRatio(4f / 3f),
+                if (previewStamp) stamp else null,
+            )
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text("Project", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(project?.name ?: "Choose a project", style = MaterialTheme.typography.titleMedium)
+                }
+                TextButton(onClick = model::openProjects, enabled = !model.busy) { Text("Change") }
             }
-            TextButton(onClick = model::openProjects, enabled = !model.busy) { Text("Change") }
-        }
-        Text("Device time · " + displayTime(draft.takenAtMillis, draft.utcOffsetMinutes), style = MaterialTheme.typography.bodyMedium)
-        Text(
-            draft.location?.let { displayLocation(it) } ?: "No location recorded",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        OutlinedTextField(
-            value = draft.note,
-            onValueChange = model::setDraftNote,
-            enabled = !model.busy,
-            label = { Text("Job note (optional)") },
-            minLines = 2,
-            maxLines = 4,
-            supportingText = { Text(draft.note.length.toString() + "/500 characters") },
-            modifier = Modifier.fillMaxWidth(),
-        )
-        HorizontalDivider()
-        ToggleRow(
-            "Preview job stamp",
-            "You can share a stamped copy after saving.",
-            previewStamp,
-            { previewStamp = it },
-        )
-        if (previewStamp && draft.location != null) {
-            ToggleRow("Show coordinates in preview", null, stampLocation, { stampLocation = it })
+            Text("Device time · " + displayTime(draft.takenAtMillis, draft.utcOffsetMinutes), style = MaterialTheme.typography.bodyMedium)
+            Text(
+                draft.location?.let { displayLocation(it) } ?: "No location recorded",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            OutlinedTextField(
+                value = draft.note,
+                onValueChange = model::setDraftNote,
+                enabled = !model.busy,
+                label = { Text("Job note (optional)") },
+                minLines = 2,
+                maxLines = 4,
+                supportingText = { Text(draft.note.length.toString() + "/500 characters") },
+                modifier = Modifier.fillMaxWidth(),
+            )
+            HorizontalDivider()
+            ToggleRow(
+                "Preview job stamp",
+                "You can share a stamped copy after saving.",
+                previewStamp,
+                { previewStamp = it },
+            )
+            if (previewStamp && draft.location != null) {
+                ToggleRow("Show coordinates in preview", null, stampLocation, { stampLocation = it })
+            }
         }
         Button(
             onClick = model::save,
             enabled = !model.busy && project != null,
-            modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp).testTag("saveOriginal"),
+            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp).testTag("saveOriginal"),
         ) {
             Text(if (model.busy) "Saving photo" else "Save original")
         }

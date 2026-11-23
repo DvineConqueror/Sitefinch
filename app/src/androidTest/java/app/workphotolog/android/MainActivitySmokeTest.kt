@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.graphics.Color
 import android.os.SystemClock
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isEnabled
@@ -42,6 +43,7 @@ class MainActivitySmokeTest {
         compose.onNodeWithText("Work Photo Log").assertIsDisplayed()
         compose.onNodeWithTag("shutter").assertIsDisplayed()
         compose.onNodeWithTag("projectPicker").assertIsDisplayed()
+        waitForShutter()
         captureScreenshot("smoke-camera.png")
 
         compose.onNodeWithTag("projectPicker").performClick()
@@ -82,12 +84,13 @@ class MainActivitySmokeTest {
         val name = "Camera capture " + SystemClock.elapsedRealtime()
         compose.onNodeWithTag("projectPicker").performClick()
         createProject(name)
-        val enabledShutter = hasTestTag("shutter") and isEnabled()
-        compose.waitUntil(25_000) { compose.onAllNodes(enabledShutter).fetchSemanticsNodes().isNotEmpty() }
+        waitForShutter()
         compose.onNodeWithTag("shutter").performClick()
         waitForText("Review photo", 25_000)
+        val preview = hasContentDescription("Photo awaiting review")
+        compose.waitUntil(10_000) { compose.onAllNodes(preview).fetchSemanticsNodes().isNotEmpty() }
         captureScreenshot("smoke-review.png")
-        compose.onNodeWithTag("saveOriginal").performScrollTo().performClick()
+        compose.onNodeWithTag("saveOriginal").assertIsDisplayed().performClick()
         waitForText("Photo details")
 
         val context = InstrumentationRegistry.getInstrumentation().targetContext
@@ -115,6 +118,11 @@ class MainActivitySmokeTest {
         compose.onNodeWithTag("newProjectName").performTextInput(name)
         compose.onNodeWithText("Create project").performClick()
         waitForText(name)
+    }
+
+    private fun waitForShutter() {
+        val enabledShutter = hasTestTag("shutter") and isEnabled()
+        compose.waitUntil(25_000) { compose.onAllNodes(enabledShutter).fetchSemanticsNodes().isNotEmpty() }
     }
 
     private fun waitForText(label: String, timeoutMillis: Long = 10_000) {

@@ -71,7 +71,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -83,6 +82,7 @@ import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.Observer
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -214,7 +214,6 @@ private fun CameraPage(model: WorkPhotoModel, project: Project?) {
     var bindFailed by remember { mutableStateOf(false) }
     var retry by remember { mutableIntStateOf(0) }
     val activeLocation = model.useLocation && locationGranted
-    val stackControls = LocalDensity.current.fontScale >= 1.4f
     val cameraRequest = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
         cameraGranted = it
     }
@@ -325,7 +324,7 @@ private fun CameraPage(model: WorkPhotoModel, project: Project?) {
                 enabled = project != null && !model.busy,
                 modifier = Modifier.weight(1f),
             ) {
-                CameraControl(Icons.Outlined.FolderOpen, "Album", stackControls)
+                CameraControl(Icons.Outlined.FolderOpen, "Album")
             }
             val shutter = useCase
             val shutterReady = cameraGranted && shutter != null && project != null && !model.busy
@@ -363,7 +362,6 @@ private fun CameraPage(model: WorkPhotoModel, project: Project?) {
                 CameraControl(
                     if (activeLocation) Icons.Outlined.LocationOn else Icons.Outlined.LocationOff,
                     if (activeLocation) "Location on" else "Location off",
-                    stackControls,
                 )
             }
         }
@@ -371,15 +369,10 @@ private fun CameraPage(model: WorkPhotoModel, project: Project?) {
 }
 
 @Composable
-private fun CameraControl(icon: ImageVector, label: String, stack: Boolean) {
-    if (stack) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp))
-            Text(label, modifier = Modifier.padding(top = 4.dp), textAlign = TextAlign.Center)
-        }
-    } else {
+private fun CameraControl(icon: ImageVector, label: String) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp))
-        Text(label, modifier = Modifier.padding(start = 6.dp), textAlign = TextAlign.Center)
+        Text(label, modifier = Modifier.padding(top = 4.dp), textAlign = TextAlign.Center)
     }
 }
 
@@ -431,6 +424,10 @@ private fun CameraPreview(
                 }
             }
         }
+        val streamObserver = Observer<PreviewView.StreamState> { state ->
+            onBound(capture.takeIf { state == PreviewView.StreamState.STREAMING })
+        }
+        view.previewStreamState.observe(owner, streamObserver)
         future.addListener({
             if (!disposed) {
                 try {
@@ -445,7 +442,6 @@ private fun CameraPreview(
                     preview.setSurfaceProvider(view.surfaceProvider)
                     cameraProvider.bindToLifecycle(owner, camera, preview, capture)
                     if (orientation.canDetectOrientation()) orientation.enable()
-                    onBound(capture)
                 } catch (_: Exception) {
                     onError()
                 }
@@ -455,6 +451,7 @@ private fun CameraPreview(
         onDispose {
             disposed = true
             orientation.disable()
+            view.previewStreamState.removeObserver(streamObserver)
             provider?.unbind(preview, capture)
             onBound(null)
         }
