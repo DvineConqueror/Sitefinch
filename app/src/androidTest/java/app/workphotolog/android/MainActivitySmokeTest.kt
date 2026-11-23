@@ -4,18 +4,22 @@ import android.Manifest
 import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.Color
+import android.media.MediaMetadataRetriever
 import android.os.ParcelFileDescriptor
 import android.os.SystemClock
+import android.view.accessibility.AccessibilityNodeInfo
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isEnabled
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performScrollTo
 import androidx.exifinterface.media.ExifInterface
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -42,7 +46,7 @@ class MainActivitySmokeTest {
     @Test
     fun cameraProjectsAndSavedOriginalOpen() {
         val name = "North roof " + SystemClock.elapsedRealtime()
-        compose.onNodeWithText("Work Photo Log").assertIsDisplayed()
+        compose.onNodeWithText("Sitefinch").assertIsDisplayed()
         compose.onNodeWithTag("shutter").assertIsDisplayed()
         compose.onNodeWithTag("projectPicker").assertIsDisplayed()
         waitForShutter()
@@ -136,15 +140,20 @@ class MainActivitySmokeTest {
             compose.onNodeWithTag("projectPicker").assertIsDisplayed()
             compose.onNodeWithText("Album").assertIsDisplayed()
             compose.onNodeWithText("Location off").assertIsDisplayed()
-            val activeWindow = InstrumentationRegistry.getInstrumentation().uiAutomation.rootInActiveWindow
-            val shutters = activeWindow?.findAccessibilityNodeInfosByText("Take photo").orEmpty()
-            assertTrue(shutters.any { it.contentDescription == "Take photo" && it.isVisibleToUser })
+            val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
+            compose.waitUntil(5_000) { automation.rootInActiveWindow.hasVisibleLabel("Take photo") }
             captureScreenshot("smoke-camera-accessibility.png")
         } finally {
             restoreSetting("system font_scale", fontScale)
             restoreSetting("global animator_duration_scale", animationScale)
             shell("cmd uimode night $nightMode")
         }
+    }
+
+    private fun AccessibilityNodeInfo?.hasVisibleLabel(label: String): Boolean {
+        if (this == null) return false
+        if (isVisibleToUser && contentDescription?.toString() == label) return true
+        return (0 until childCount).any { getChild(it).hasVisibleLabel(label) }
     }
 
     private fun restoreSetting(key: String, value: String) {
@@ -154,6 +163,86 @@ class MainActivitySmokeTest {
     private fun shell(command: String): String {
         val descriptor = InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand(command)
         return ParcelFileDescriptor.AutoCloseInputStream(descriptor).bufferedReader().use { it.readText().trim() }
+    }
+
+    @Test
+    fun selectsATemplateAndRecordsAPlayableClip() {
+        val name = "Video sample " + SystemClock.elapsedRealtime()
+        compose.onNodeWithTag("projectPicker").performClick()
+        createProject(name)
+        compose.onNodeWithTag("templates").performClick()
+        compose.onNodeWithTag("templateSiteVisit").performScrollTo().performClick()
+        compose.onNodeWithTag("applyTemplate").performClick()
+        try {
+            compose.onNodeWithTag("videoMode").performClick()
+            waitForShutter()
+            compose.onNodeWithTag("shutter").performClick()
+            waitForText("00:01", 25_000)
+            compose.onNodeWithTag("shutter").performClick()
+            waitForText("Review clip", 25_000)
+            compose.onNodeWithTag("saveOriginal").assertIsDisplayed().performClick()
+            waitForText("Clip details")
+            val context = InstrumentationRegistry.getInstrumentation().targetContext
+            val repository = PhotoRepository(context)
+            runBlocking {
+                val project = withTimeout(10_000) { repository.projects.first { rows -> rows.any { it.name == name } } }
+                    .first { it.name == name }
+                val clip = withTimeout(10_000) { repository.photos(project.id).first { it.isNotEmpty() } }.single()
+                assertTrue(clip.isVideo)
+                assertTrue(StampTemplate.fromJson(clip.stampJson).preset == StampPreset.SITE_VISIT)
+                assertTrue(repository.checkOriginal(clip))
+                val reader = MediaMetadataRetriever()
+                try {
+                    reader.setDataSource(repository.originalFile(clip).absolutePath)
+                    val duration = reader.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull()
+                    assertTrue((duration ?: 0) > 0)
+                    val frame = checkNotNull(reader.getFrameAtTime(-1))
+                    frame.recycle()
+                } finally {
+                    reader.release()
+                }
+            }
+        } finally {
+            val back = compose.onAllNodes(hasContentDescription("Back")).fetchSemanticsNodes()
+            if (back.isNotEmpty()) compose.onNode(hasContentDescription("Back")).performClick()
+            if (compose.onAllNodes(hasTestTag("templates") and isEnabled()).fetchSemanticsNodes().isNotEmpty()) {
+                compose.onNodeWithTag("templates").performClick()
+                compose.onNodeWithTag("templateClean").performClick()
+                compose.onNodeWithTag("applyTemplate").performClick()
+            }
+        }
+    }
+
+    @Test
+    fun customStampCanBeSavedAndReused() {
+        val name = "Survey " + SystemClock.elapsedRealtime()
+        val heading = "Concrete pour"
+        compose.onNodeWithTag("templates").performClick()
+        compose.onNodeWithTag("templateClock").performScrollTo().performClick()
+        compose.onNodeWithTag("editTemplate").performClick()
+        compose.onNodeWithTag("stampHeading").performScrollTo().performTextClearance()
+        compose.onNodeWithTag("stampHeading").performTextInput(heading)
+        compose.onNodeWithTag("stampEditorSTYLE").performScrollTo().performClick()
+        compose.onNodeWithTag("stampSizeLARGE").performScrollTo().performClick()
+        compose.onNodeWithTag("saveTemplateStyle").performClick()
+        compose.onNodeWithTag("styleName").performTextInput(name)
+        compose.onNodeWithText("Save", ignoreCase = false).performClick()
+        compose.onNodeWithTag("applyTemplate").performClick()
+
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val preferences = context.getSharedPreferences("camera", android.content.Context.MODE_PRIVATE)
+        val library = org.json.JSONObject(checkNotNull(preferences.getString("stamp_library", null)))
+        val saved = StampTemplate.fromJson(library.getString(name))
+        assertTrue(saved.heading == heading && saved.layout == StampLayout.CLOCK && saved.size == StampSize.LARGE)
+
+        compose.onNodeWithTag("templates").performClick()
+        compose.onNodeWithTag("savedStyles").performClick()
+        compose.onNodeWithText(name).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithContentDescription("Delete " + name).performScrollTo().performClick()
+        compose.onNodeWithText("Delete style").performClick()
+        compose.onNodeWithText("Presets").performClick()
+        compose.onNodeWithTag("templateClean").performScrollTo().performClick()
+        compose.onNodeWithTag("applyTemplate").performClick()
     }
 
     private fun createProject(name: String) {

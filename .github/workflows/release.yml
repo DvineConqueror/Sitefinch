@@ -68,7 +68,7 @@ jobs:
           test "v$version" = "$GITHUB_REF_NAME"
           printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$scratch/release.keystore"
           mkdir -p release
-          artifact="work-photo-log-$GITHUB_REF_NAME-arm64-v8a.apk"
+          artifact="sitefinch-$GITHUB_REF_NAME-arm64-v8a.apk"
           "$tools/zipalign" -P 16 -f 4 "$unsigned" "$scratch/aligned.apk"
           "$tools/apksigner" sign \
             --ks "$scratch/release.keystore" \
@@ -101,7 +101,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          artifact="work-photo-log-$GITHUB_REF_NAME-arm64-v8a.apk"
+          artifact="sitefinch-$GITHUB_REF_NAME-arm64-v8a.apk"
           gh release create "$GITHUB_REF_NAME" \
             "release/$artifact" "release/$artifact.sha256" \
-            --verify-tag --generate-notes --title "Work Photo Log $GITHUB_REF_NAME"
+            --verify-tag --generate-notes --title "Sitefinch $GITHUB_REF_NAME"

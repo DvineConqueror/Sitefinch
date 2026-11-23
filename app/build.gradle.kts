@@ -58,8 +58,8 @@ android {
         applicationId = "app.workphotolog.android"
         minSdk = androidMinimumApi
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.2.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -126,6 +126,8 @@ dependencies {
     implementation("androidx.camera:camera-camera2:" + cameraVersion)
     implementation("androidx.camera:camera-lifecycle:" + cameraVersion)
     implementation("androidx.camera:camera-view:" + cameraVersion)
+    implementation("androidx.camera:camera-video:" + cameraVersion)
+    implementation("androidx.camera:camera-effects:" + cameraVersion)
     implementation("androidx.exifinterface:exifinterface:1.4.1")
     implementation("androidx.room:room-runtime:" + roomVersion)
     implementation("androidx.room:room-ktx:" + roomVersion)
@@ -139,6 +141,5 @@ dependencies {
     androidTestImplementation("androidx.test:runner:1.7.0")
     androidTestImplementation("androidx.test:rules:1.7.0")
     androidTestImplementation("androidx.test.ext:junit:1.3.0")
-    androidTestImplementation("androidx.room:room-testing:" + roomVersion)
     debugImplementation("androidx.compose.ui:ui-test-manifest")
 }

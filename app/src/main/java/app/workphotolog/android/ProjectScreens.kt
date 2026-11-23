@@ -1,5 +1,8 @@
 package app.workphotolog.android
 
+import android.media.MediaMetadataRetriever
+import android.widget.MediaController
+import android.widget.VideoView
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -26,6 +29,7 @@ import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Collections
 import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.Image
+import androidx.compose.material.icons.outlined.PlayCircleOutline
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -39,6 +43,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -52,10 +57,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -92,6 +101,30 @@ fun ProjectsScreen(model: WorkPhotoModel, projects: List<Project>) {
             }
         }
         LazyColumn(Modifier.fillMaxWidth().weight(1f)) {
+            if (model.draft == null) item {
+                Surface(
+                    shape = RoundedCornerShape(22.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
+                ) {
+                    Row(
+                        Modifier.padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Your workspace", style = MaterialTheme.typography.headlineSmall)
+                            Text(
+                                "${projects.size} " + if (projects.size == 1) "project on this device" else "projects on this device",
+                                style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier.padding(top = 4.dp),
+                            )
+                        }
+                        Image(painterResource(R.drawable.sitefinch_pip), null, Modifier.size(56.dp, 72.dp))
+                    }
+                }
+            }
             if (creating) item {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 16.dp)) {
                     OutlinedTextField(
@@ -150,22 +183,30 @@ fun ProjectsScreen(model: WorkPhotoModel, projects: List<Project>) {
 
 @Composable
 fun ReviewScreen(model: WorkPhotoModel, draft: CaptureDraft, project: Project?) {
-    var previewStamp by rememberSaveable(draft.file.absolutePath) { mutableStateOf(false) }
-    var stampLocation by rememberSaveable(draft.file.absolutePath) { mutableStateOf(false) }
+    val configured = remember(draft.stampJson) { StampTemplate.fromJson(draft.stampJson) }
+    var previewStamp by rememberSaveable(draft.file.absolutePath) { mutableStateOf(configured.preset != null) }
+    var stampLocation by rememberSaveable(draft.file.absolutePath) { mutableStateOf(configured.showCoordinates) }
+    var editStamp by rememberSaveable { mutableStateOf(false) }
+    val template = if (configured.preset == null) StampTemplate.DEFAULT_COPY else configured
     val stamp = stampDetails(
         project?.name ?: "Project", draft.note, draft.takenAtMillis, draft.utcOffsetMinutes,
-        draft.location.takeIf { stampLocation },
+        draft.location.takeIf { stampLocation }, template.copy(showCoordinates = stampLocation),
+        logo = rememberStampLogo(template.logoId),
     )
     Column(Modifier.fillMaxSize().imePadding().padding(horizontal = 18.dp)) {
         Column(
             Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            PhotoImage(
-                draft.file, "Photo awaiting review",
-                Modifier.fillMaxWidth().heightIn(max = 440.dp).aspectRatio(4f / 3f),
-                if (previewStamp) stamp else null,
-            )
+            val mediaSize = Modifier.fillMaxWidth().heightIn(max = 440.dp).aspectRatio(4f / 3f)
+            if (draft.isVideo) {
+                ClipPreview(draft.file, mediaSize)
+            } else {
+                PhotoImage(
+                    draft.file, "Photo awaiting review", mediaSize,
+                    if (previewStamp) stamp else null,
+                )
+            }
             Row(
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -194,14 +235,29 @@ fun ReviewScreen(model: WorkPhotoModel, draft: CaptureDraft, project: Project?) 
                 modifier = Modifier.fillMaxWidth(),
             )
             HorizontalDivider()
-            ToggleRow(
-                "Preview job stamp",
-                "You can share a stamped copy after saving.",
-                previewStamp,
-                { previewStamp = it },
-            )
-            if (previewStamp && draft.location != null) {
-                ToggleRow("Show coordinates in preview", null, stampLocation, { stampLocation = it })
+            if (draft.isVideo) {
+                Text(
+                    configured.displayName?.let { "Recorded with $it stamp" } ?: "Clean clip",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        configured.displayName ?: "Clean photo",
+                        Modifier.weight(1f),
+                        style = MaterialTheme.typography.titleSmall,
+                    )
+                    TextButton(onClick = { editStamp = true }, enabled = !model.busy) { Text("Templates") }
+                }
+                ToggleRow(
+                    "Preview job stamp",
+                    "Save original keeps the photo clean. Share a stamped copy after saving.",
+                    previewStamp,
+                    { previewStamp = it },
+                )
+                if (previewStamp && draft.location != null) {
+                    ToggleRow("Show coordinates in preview", null, stampLocation, { stampLocation = it })
+                }
             }
         }
         Button(
@@ -209,8 +265,31 @@ fun ReviewScreen(model: WorkPhotoModel, draft: CaptureDraft, project: Project?) 
             enabled = !model.busy && project != null,
             modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp).testTag("saveOriginal"),
         ) {
-            Text(if (model.busy) "Saving photo" else "Save original")
+            Text(when {
+                model.busy -> "Saving"
+                draft.isVideo -> "Save clip"
+                else -> "Save original"
+            })
         }
+    }
+    if (editStamp) {
+        val image = rememberStampBackdrop(draft.file)
+        StampTemplateSheet(
+            configured,
+            onApply = {
+                model.applyDraftStamp(it)
+                previewStamp = it.preset != null
+                stampLocation = it.showCoordinates
+                editStamp = false
+            },
+            onDismiss = { editStamp = false },
+            library = model.stampLibrary,
+            onSaveTemplate = model::saveStamp,
+            onDeleteTemplate = model::deleteStamp,
+            preview = StampPreview(
+                image, project?.name ?: "Project", draft.note, draft.takenAtMillis, draft.utcOffsetMinutes, draft.location,
+            ),
+        )
     }
 }
 
@@ -225,6 +304,8 @@ fun AlbumScreen(model: WorkPhotoModel, project: Project) {
         }
     }
     val photos by flow.collectAsStateWithLifecycle(initialValue = emptyList())
+    val photoCount = photos.count { !it.isVideo }
+    val clipCount = photos.size - photoCount
     var showShare by rememberSaveable(project.id) { mutableStateOf(false) }
     var includeLocation by rememberSaveable(project.id) { mutableStateOf(false) }
 
@@ -234,13 +315,17 @@ fun AlbumScreen(model: WorkPhotoModel, project: Project) {
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(photos.size.toString() + (if (photos.size == 1) " photo" else " photos"), style = MaterialTheme.typography.titleSmall)
+            val countLabel = buildList {
+                add("$photoCount " + if (photoCount == 1) "photo" else "photos")
+                if (clipCount > 0) add("$clipCount " + if (clipCount == 1) "clip" else "clips")
+            }.joinToString(" · ")
+            Text(countLabel, style = MaterialTheme.typography.titleSmall)
             TextButton(
                 onClick = {
                     includeLocation = false
                     showShare = true
                 },
-                enabled = photos.isNotEmpty() && !model.busy,
+                enabled = photoCount > 0 && !model.busy,
             ) {
                 Icon(Icons.Outlined.Share, contentDescription = null, modifier = Modifier.size(20.dp))
                 Text(if (model.busy) "Preparing ZIP" else "Export ZIP", Modifier.padding(start = 6.dp))
@@ -264,7 +349,7 @@ fun AlbumScreen(model: WorkPhotoModel, project: Project) {
                             attempt++
                         }) { Text("Retry album") }
                     } else {
-                        Text("No photos in this project", style = MaterialTheme.typography.titleMedium)
+                        Text("No captures in this project", style = MaterialTheme.typography.titleMedium)
                         Button(onClick = model::openCamera, enabled = !model.busy) { Text("Open camera") }
                     }
                 }
@@ -275,13 +360,14 @@ fun AlbumScreen(model: WorkPhotoModel, project: Project) {
                     HorizontalDivider()
                     ListItem(
                         headlineContent = {
-                            Text(photo.note.ifBlank { "Work photo" }, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            Text(
+                                photo.note.ifBlank { if (photo.isVideo) "Work clip" else "Work photo" },
+                                maxLines = 2, overflow = TextOverflow.Ellipsis,
+                            )
                         },
                         supportingContent = { Text(displayTime(photo.takenAtMillis, photo.utcOffsetMinutes)) },
                         leadingContent = {
-                            PhotoImage(
-                                model.repository.originalFile(photo), null, Modifier.size(62.dp), reduceSize = true,
-                            )
+                            MediaThumbnail(model.repository.originalFile(photo), photo.isVideo, Modifier.size(62.dp))
                         },
                         colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surface),
                         modifier = Modifier.clickable(enabled = !model.busy) { model.showPhoto(photo) },
@@ -296,8 +382,9 @@ fun AlbumScreen(model: WorkPhotoModel, project: Project) {
             title = { Text("Export project ZIP") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("Shares " + photos.size + " original JPEGs, device times, job notes, photo IDs, and file hashes.")
-                    if (photos.any { it.location != null }) {
+                    Text("Shares $photoCount original JPEGs with device times, job notes, photo IDs, and file hashes.")
+                    if (clipCount > 0) Text("Share videos individually from the album.")
+                    if (photos.any { !it.isVideo && it.location != null }) {
                         ToggleRow(
                             "Include recorded locations", "Adds coordinates, accuracy, and fix age.",
                             includeLocation, { includeLocation = it },
@@ -319,27 +406,53 @@ fun AlbumScreen(model: WorkPhotoModel, project: Project) {
 @Composable
 fun PhotoDetailsScreen(model: WorkPhotoModel, photo: Photo, project: Project?) {
     var includeLocation by rememberSaveable(photo.id) { mutableStateOf(false) }
-    var showStamp by rememberSaveable(photo.id) { mutableStateOf(false) }
+    var editStamp by rememberSaveable(photo.id) { mutableStateOf(false) }
+    var editMarks by rememberSaveable(photo.id) { mutableStateOf(false) }
+    var marks by remember(photo.id) { mutableStateOf(emptyList<PhotoMark>()) }
+    val recordedTemplate = remember(photo.stampJson) { StampTemplate.fromJson(photo.stampJson) }
+    var copyStampJson by rememberSaveable(photo.id) {
+        mutableStateOf((if (recordedTemplate.preset == null) StampTemplate.DEFAULT_COPY else recordedTemplate).toJson())
+    }
+    var showStamp by rememberSaveable(photo.id) { mutableStateOf(!photo.isVideo && recordedTemplate.preset != null) }
+    val template = remember(copyStampJson) { StampTemplate.fromJson(copyStampJson) }
     val projectName = project?.name ?: "Project"
-    val stamp = stampDetails(
-        projectName, photo.note, photo.takenAtMillis, photo.utcOffsetMinutes,
-        photo.location.takeIf { includeLocation },
-    )
+    val logo = rememberStampLogo(template.logoId)
+    val stamp = if (showStamp && template.preset != null) {
+        stampDetails(
+            projectName, photo.note, photo.takenAtMillis, photo.utcOffsetMinutes,
+            photo.location.takeIf { includeLocation }, template.copy(showCoordinates = includeLocation),
+            photoCode = photo.id, logo = logo,
+        )
+    } else null
+    val file = model.repository.originalFile(photo)
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 18.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        PhotoImage(
-            model.repository.originalFile(photo), if (showStamp) "Stamped copy preview" else "Original work photo",
-            Modifier.fillMaxWidth().heightIn(max = 440.dp).aspectRatio(4f / 3f),
-            if (showStamp) stamp else null,
-        )
+        val mediaSize = Modifier.fillMaxWidth().heightIn(max = 440.dp).aspectRatio(4f / 3f)
+        if (photo.isVideo) {
+            ClipPreview(file, mediaSize)
+            Text(recordedTemplate.displayName?.let { "Recorded with $it stamp" } ?: "Clean clip")
+        } else {
+            PhotoImage(
+                file, if (stamp != null || marks.isNotEmpty()) "Photo copy preview" else "Original work photo",
+                mediaSize, stamp, marks = marks,
+            )
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = { editStamp = true }, enabled = !model.busy, modifier = Modifier.weight(1f)) {
+                    Text("Edit stamp")
+                }
+                OutlinedButton(onClick = { editMarks = true }, enabled = !model.busy, modifier = Modifier.weight(1f)) {
+                    Text("Markup")
+                }
+            }
+        }
         Text(projectName, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.semantics { heading() })
         Text("Device time · " + displayTime(photo.takenAtMillis, photo.utcOffsetMinutes))
         photo.location?.let { Text(displayLocation(it), color = MaterialTheme.colorScheme.onSurfaceVariant) }
         if (photo.note.isNotBlank()) Text(photo.note)
         HorizontalDivider()
-        Text("Photo ID", style = MaterialTheme.typography.labelMedium)
+        Text(if (photo.isVideo) "Clip ID" else "Photo ID", style = MaterialTheme.typography.labelMedium)
         Text(photo.id, style = MaterialTheme.typography.bodyMedium)
         OutlinedButton(onClick = { model.checkIntegrity(photo) }, enabled = !model.busy) { Text("Check original file") }
         model.integrityResult?.let { matches ->
@@ -350,23 +463,143 @@ fun PhotoDetailsScreen(model: WorkPhotoModel, photo: Photo, project: Project?) {
         }
 
         HorizontalDivider()
-        Text("Share photo", style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
+        Text(if (photo.isVideo) "Sharing" else "Share photo", style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
         Button(onClick = { model.shareOriginal(photo) }, enabled = !model.busy, modifier = Modifier.fillMaxWidth()) {
             Icon(Icons.Outlined.Share, contentDescription = null, modifier = Modifier.size(18.dp))
-            Text("Share original", Modifier.padding(start = 8.dp))
+            Text(if (photo.isVideo) "Share clip" else "Share original", Modifier.padding(start = 8.dp))
         }
-        ToggleRow("Preview stamped copy", null, showStamp, { showStamp = it })
-        if (showStamp) {
-            if (photo.location != null) {
-                ToggleRow("Include coordinates on copy", null, includeLocation, { includeLocation = it })
+        if (!photo.isVideo) {
+            if (template.preset != null) ToggleRow("Include stamp on copy", null, showStamp, { showStamp = it })
+            if (stamp != null && photo.location != null) {
+                ToggleRow("Include GPS coordinates on copy", null, includeLocation, { includeLocation = it })
             }
-            OutlinedButton(
-                onClick = { model.shareStamped(photo, projectName, includeLocation) },
-                enabled = !model.busy,
-                modifier = Modifier.fillMaxWidth(),
-            ) { Text("Share stamped copy") }
+            if (stamp != null || marks.isNotEmpty()) {
+                OutlinedButton(
+                    onClick = { model.sharePhotoCopy(photo, stamp, marks) },
+                    enabled = !model.busy,
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text(if (marks.isEmpty()) "Share stamped copy" else "Share marked-up copy") }
+            }
         }
         if (model.busy) CircularProgressIndicator(Modifier.size(28.dp).align(Alignment.CenterHorizontally))
+    }
+    if (editStamp) {
+        val image = rememberStampBackdrop(file)
+        StampTemplateSheet(
+            if (showStamp) template else StampTemplate(),
+            onApply = {
+                copyStampJson = it.toJson()
+                showStamp = it.preset != null
+                editStamp = false
+            },
+            onDismiss = { editStamp = false },
+            library = model.stampLibrary,
+            onSaveTemplate = model::saveStamp,
+            onDeleteTemplate = model::deleteStamp,
+            preview = StampPreview(
+                image, projectName, photo.note, photo.takenAtMillis, photo.utcOffsetMinutes, photo.location, photo.id,
+            ),
+        )
+    }
+    if (editMarks) {
+        PhotoMarkupEditor(file, stamp, marks, onApply = {
+            marks = it
+            editMarks = false
+        }, onDismiss = { editMarks = false })
+    }
+}
+
+@Composable
+private fun rememberStampBackdrop(file: File): android.graphics.Bitmap? {
+    val bitmap by produceState<android.graphics.Bitmap?>(null, file) {
+        value = withContext(Dispatchers.IO) {
+            try {
+                decodeJpeg(file, 660)
+            } catch (_: java.io.IOException) {
+                null
+            }
+        }
+    }
+    return bitmap
+}
+
+@Composable
+internal fun rememberStampLogo(id: String?): android.graphics.Bitmap? {
+    val context = LocalContext.current
+    val logo by produceState<Pair<String?, android.graphics.Bitmap?>>(null to null, id) {
+        value = id to StampLogoStore(context).loadLogo(id)
+    }
+    return logo.second.takeIf { logo.first == id }
+}
+
+@Composable
+internal fun MediaThumbnail(file: File, video: Boolean, modifier: Modifier) {
+    if (!video) {
+        PhotoImage(file, null, modifier, reduceSize = true)
+        return
+    }
+    val frame by produceState<ImageBitmap?>(null, file) {
+        value = withContext(Dispatchers.IO) {
+            val reader = MediaMetadataRetriever()
+            try {
+                reader.setDataSource(file.absolutePath)
+                reader.getScaledFrameAtTime(0, MediaMetadataRetriever.OPTION_CLOSEST_SYNC, 200, 200)?.asImageBitmap()
+            } catch (_: RuntimeException) {
+                null
+            } finally {
+                reader.release()
+            }
+        }
+    }
+    Box(modifier.clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.surfaceContainer),
+        contentAlignment = Alignment.Center) {
+        frame?.let { Image(it, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
+        Icon(
+            Icons.Outlined.PlayCircleOutline, null, Modifier.size(20.dp),
+            tint = if (frame != null) Color.White else MaterialTheme.colorScheme.onSurface,
+        )
+    }
+}
+
+@Composable
+private fun ClipPreview(file: File, modifier: Modifier) {
+    var failed by remember(file) { mutableStateOf(false) }
+    var playing by remember(file) { mutableStateOf(false) }
+    Box(modifier.clip(RoundedCornerShape(16.dp)).background(MaterialTheme.colorScheme.surfaceContainer),
+        contentAlignment = Alignment.Center) {
+        if (failed) {
+            Text("Video preview unavailable")
+        } else if (playing) {
+            AndroidView(
+                factory = { context ->
+                    VideoView(context).apply {
+                        contentDescription = "Work clip player"
+                        val controller = MediaController(context)
+                        controller.setAnchorView(this)
+                        setMediaController(controller)
+                        setOnPreparedListener {
+                            start()
+                            controller.show()
+                        }
+                        setOnCompletionListener {
+                            controller.hide()
+                            playing = false
+                        }
+                        setOnErrorListener { _, _, _ ->
+                            controller.hide()
+                            failed = true
+                            true
+                        }
+                        setVideoPath(file.absolutePath)
+                    }
+                },
+                modifier = Modifier.fillMaxSize(),
+                onRelease = { it.stopPlayback() },
+            )
+        } else {
+            MediaThumbnail(file, true, Modifier.fillMaxSize())
+            Button(onClick = { playing = true }) { Text("Play clip") }
+        }
     }
 }
 
@@ -399,13 +632,15 @@ private fun PhotoImage(
     modifier: Modifier,
     stamp: StampDetails? = null,
     reduceSize: Boolean = false,
+    marks: List<PhotoMark> = emptyList(),
 ) {
-    val preview by produceState(PhotoPreview(), file, stamp, reduceSize) {
+    val preview by produceState(PhotoPreview(), file, stamp, reduceSize, marks) {
         if (stamp != null) delay(140)
         value = withContext(Dispatchers.IO) {
             try {
-                val bitmap = decodeJpeg(file, if (reduceSize) 200 else 1400, mutable = stamp != null)
+                val bitmap = decodeJpeg(file, if (reduceSize) 200 else 1400, mutable = stamp != null || marks.isNotEmpty())
                 if (stamp != null) drawStamp(bitmap, stamp)
+                if (marks.isNotEmpty()) drawPhotoMarks(android.graphics.Canvas(bitmap), bitmap.width, bitmap.height, marks)
                 PhotoPreview(bitmap.asImageBitmap())
             } catch (_: java.io.IOException) {
                 PhotoPreview(unavailable = true)

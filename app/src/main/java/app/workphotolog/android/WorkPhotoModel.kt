@@ -3,6 +3,7 @@ package app.workphotolog.android
 import android.app.Application
 import android.content.Context
 import androidx.camera.core.ImageCapture
+import androidx.camera.video.Recording
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -16,6 +17,7 @@ import java.time.ZoneId
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -24,8 +26,12 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.json.JSONException
+import org.json.JSONObject
 
 enum class Page { CAMERA, REVIEW, PROJECTS, ALBUM, PHOTO }
+
+internal enum class CaptureMode { PHOTO, VIDEO }
 
 data class ShareRequest(val file: File, val mimeType: String)
 
@@ -49,6 +55,23 @@ class WorkPhotoModel(private val app: Application) : AndroidViewModel(app) {
         private set
     var useLocation by mutableStateOf(preferences.getBoolean("location", false))
         private set
+    var stampTemplate by mutableStateOf(StampTemplate.fromJson(preferences.getString("stamp_template", null)))
+        private set
+    var stampLibrary by mutableStateOf(readStampLibrary())
+        private set
+    var nextCaptureNote by mutableStateOf("")
+        private set
+    internal var captureMode by mutableStateOf(CaptureMode.PHOTO)
+        private set
+    internal var recordingStatus by mutableStateOf<VideoRecordingStatus?>(null)
+        private set
+    internal var recordingFinishing by mutableStateOf(false)
+        private set
+    internal val captureLocked: Boolean
+        get() = busy || recordingStatus != null || recordingFinishing
+    private var recording: Recording? = null
+    private var prepareRecording: Job? = null
+    private var disposed = false
     var draft by mutableStateOf<CaptureDraft?>(null)
         private set
     var activePhoto by mutableStateOf<Photo?>(null)
@@ -75,6 +98,52 @@ class WorkPhotoModel(private val app: Application) : AndroidViewModel(app) {
     fun setLocation(enabled: Boolean) {
         useLocation = enabled
         preferences.edit { putBoolean("location", enabled) }
+    }
+
+    fun applyStampTemplate(template: StampTemplate) {
+        stampTemplate = template
+        preferences.edit { putString("stamp_template", template.toJson()) }
+    }
+
+    fun applyDraftStamp(template: StampTemplate) {
+        val pending = draft ?: return
+        if (!pending.isVideo) draft = pending.copy(stampJson = template.toJson())
+    }
+
+    fun saveStamp(name: String, template: StampTemplate) {
+        val title = name.trim().take(48)
+        if (title.isBlank() || template.preset == null) return
+        updateStampLibrary(stampLibrary + (title to template))
+    }
+
+    fun deleteStamp(name: String) = updateStampLibrary(stampLibrary - name)
+
+    private fun readStampLibrary(): Map<String, StampTemplate> {
+        val saved = preferences.getString("stamp_library", null) ?: return emptyMap()
+        return try {
+            val library = JSONObject(saved)
+            library.keys().asSequence().mapNotNull { name ->
+                val template = StampTemplate.fromJson(library.optString(name))
+                if (template.preset == null) null else name to template
+            }.sortedBy { it.first.lowercase() }.toMap()
+        } catch (_: JSONException) {
+            emptyMap()
+        }
+    }
+
+    private fun updateStampLibrary(library: Map<String, StampTemplate>) {
+        val saved = JSONObject()
+        library.forEach { (name, template) -> saved.put(name, template.toJson()) }
+        preferences.edit { putString("stamp_library", saved.toString()) }
+        stampLibrary = library.toSortedMap(compareBy<String> { it.lowercase() }.thenBy { it })
+    }
+
+    fun updateNextCaptureNote(note: String) {
+        nextCaptureNote = limitNote(note)
+    }
+
+    internal fun setCaptureMode(mode: CaptureMode) {
+        if (!captureLocked) captureMode = mode
     }
 
     fun retryStorage() {
@@ -119,12 +188,14 @@ class WorkPhotoModel(private val app: Application) : AndroidViewModel(app) {
     }
 
     fun setDraftNote(note: String) {
-        val limited = note.take(500)
-        draft = draft?.copy(note = limited.dropLastWhile(Char::isHighSurrogate))
+        draft = draft?.copy(note = limitNote(note))
     }
+
+    private fun limitNote(note: String) = note.take(500).dropLastWhile(Char::isHighSurrogate)
 
     fun capture(imageCapture: ImageCapture) {
         val target = project ?: return
+        val note = nextCaptureNote
         val instant = Instant.now()
         val offset = ZoneId.systemDefault().rules.getOffset(instant).totalSeconds / 60
         perform("Couldn't capture a photo. Try again.") {
@@ -132,13 +203,90 @@ class WorkPhotoModel(private val app: Application) : AndroidViewModel(app) {
             val stagedFile = withContext(Dispatchers.IO) { repository.newCaptureFile() }
             try {
                 imageCapture.captureFile(stagedFile, ContextCompat.getMainExecutor(app))
-                draft = CaptureDraft(stagedFile, target.id, instant.toEpochMilli(), offset, "", location?.await())
+                draft = CaptureDraft(
+                    stagedFile, target.id, instant.toEpochMilli(), offset, note, location?.await(),
+                    stampJson = stampTemplate.toJson(),
+                )
+                nextCaptureNote = ""
                 page = Page.REVIEW
             } catch (failure: Exception) {
                 stagedFile.delete()
                 throw failure
             }
         }
+    }
+
+    internal fun startVideo(camera: VideoCamera, withAudio: Boolean) {
+        val target = project ?: return
+        if (captureLocked) return
+        val selected = stampTemplate
+        val note = nextCaptureNote
+        val includeFix = useLocation
+        busy = true
+        prepareRecording = viewModelScope.launch {
+            var staged: File? = null
+            try {
+                val fix = if (includeFix) currentFix(app) else null
+                val instant = Instant.now()
+                val offset = ZoneId.systemDefault().rules.getOffset(instant).totalSeconds / 60
+                val details = selected.preset?.let {
+                    stampDetails(target.name, note, instant.toEpochMilli(), offset, fix, selected,
+                        logo = StampLogoStore(app).loadLogo(selected.logoId),
+                    )
+                }
+                val output = withContext(Dispatchers.IO) { repository.newCaptureFile(isVideo = true) }
+                staged = output
+                val pending = CaptureDraft(
+                    output, target.id, instant.toEpochMilli(), offset, note, fix,
+                    stampJson = selected.toJson(), isVideo = true,
+                )
+                recording = camera.start(app, output, details, withAudio, { recordingStatus = it }) { result ->
+                    recording = null
+                    recordingStatus = null
+                    recordingFinishing = false
+                    if (disposed) {
+                        output.delete()
+                    } else {
+                        result.onSuccess {
+                            draft = pending
+                            nextCaptureNote = ""
+                            page = Page.REVIEW
+                        }.onFailure {
+                            output.delete()
+                            notice = "Couldn't record this clip. Try again."
+                        }
+                    }
+                }
+                recordingStatus = VideoRecordingStatus(0, false)
+            } catch (failure: Exception) {
+                staged?.delete()
+                if (failure is CancellationException) throw failure
+                notice = "Couldn't start recording."
+            } finally {
+                busy = false
+            }
+        }
+    }
+
+    internal fun toggleVideoPause() {
+        if (recordingFinishing) return
+        val active = recording ?: return
+        if (recordingStatus?.paused == true) active.resume() else active.pause()
+    }
+
+    internal fun stopVideo() {
+        prepareRecording?.cancel()
+        val active = recording ?: return
+        if (!recordingFinishing) {
+            recordingFinishing = true
+            active.stop()
+        }
+    }
+
+    override fun onCleared() {
+        disposed = true
+        stopVideo()
+        super.onCleared()
     }
 
     fun save() {
@@ -148,7 +296,7 @@ class WorkPhotoModel(private val app: Application) : AndroidViewModel(app) {
             draft = null
             photoReturnPage = Page.CAMERA
             openPhoto(saved)
-            notice = "Photo saved"
+            notice = if (saved.isVideo) "Clip saved" else "Photo saved"
         }
     }
 
@@ -190,18 +338,17 @@ class WorkPhotoModel(private val app: Application) : AndroidViewModel(app) {
 
     fun shareOriginal(photo: Photo) {
         val file = repository.originalFile(photo)
-        if (file.isFile) shareRequest = ShareRequest(file, "image/jpeg")
-        else notice = "The original file is missing."
+        if (file.isFile) {
+            shareRequest = ShareRequest(file, if (photo.isVideo) "video/mp4" else "image/jpeg")
+        } else notice = "The original file is missing."
     }
 
-    fun shareStamped(photo: Photo, projectName: String, includeLocation: Boolean) {
-        perform("Couldn't prepare the stamped copy.") {
-            val details = stampDetails(
-                projectName, photo.note, photo.takenAtMillis, photo.utcOffsetMinutes,
-                photo.location.takeIf { includeLocation },
-            )
+    internal fun sharePhotoCopy(photo: Photo, details: StampDetails?, marks: List<PhotoMark>) {
+        perform("Couldn't prepare the photo copy.") {
             val file = withContext(Dispatchers.IO) {
-                createStampedCopy(app, repository.originalFile(photo), details)
+                createStampedCopy(app, repository.originalFile(photo), details) { bitmap ->
+                    drawPhotoMarks(android.graphics.Canvas(bitmap), bitmap.width, bitmap.height, marks)
+                }
             }
             shareRequest = ShareRequest(file, "image/jpeg")
         }

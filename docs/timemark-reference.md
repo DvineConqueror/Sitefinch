@@ -18,4 +18,25 @@ The new APK contains nine DEX entries, CameraX 1.5.0 and a Hermes bytecode bundl
 | Reporting | `PdfExporter` invokes Android Canvas bitmap rendering at `classes8.dex+0x649112`. |
 | Archive writing | `ZipUtil.zipFiles` invokes `ZipOutputStream.putNextEntry` at `classes8.dex+0x799106`. The call establishes a ZIP helper. Its caller-to-UI linkage is unresolved. |
 
-This pass was static. Exact capture times, team synchronization, entitlement state, and backend verification behavior were outside the observed evidence. Work Photo Log uses its own capture and export implementation. Timemark's public product documentation describes the user-facing business features. [Timemark help](https://www.timemark.com/faq)
+The package findings are static. Sitefinch uses its own capture and export implementation. Timemark's public product documentation describes its service features. [Timemark help](https://www.timemark.com/faq)
+
+## Recorded interaction
+
+The screen recording is 2:14 long. Frame review establishes the following visible interactions.
+
+| Time | Observed interaction | Sitefinch implementation |
+| --- | --- | --- |
+| 0:14–0:32 | Camera, template gallery, template editor, and logo settings with position and crop | Searchable job presets and reusable saved styles, field editing, and gallery logo import with placement and crop preview |
+| 0:35–0:41 | Size and text-color controls carry a Plus label. A separate row selects a palette. | Size, layout, position, accent and text color controls available to all users |
+| 0:47–1:14 | Zoom selection and nearby address chooser, including the location-disabled state | Native camera zoom controls and editable address with optional Android lookup |
+| 1:29–1:41 | Photo preview, markup tools, and share actions | Preview edits for stamp, pen, box, arrow, and text. Original and derivative sharing are separate actions. |
+| 1:44–1:56 | Developer watermark with a subscription label, then batch export | Media has no developer attribution. Local projects export JPEGs with a ZIP manifest. |
+| 1:59–2:13 | Video record, timer, pause and stop, then separate Clock and Checklist modes | Photo and video capture, with pause, stop, and opt-in microphone audio for video |
+
+Later sample photos show a time-first layout with a job address and a separate, company-led completion stamp. Sitefinch provides a Clock layout and job presets as independent options. The reference screenshots, recorded photos, and logos stay outside the app and repository.
+
+## Sitefinch v0.2.0 coverage
+
+Sitefinch covers the local camera, stamp and sharing workflow. The equivalent to Timemark's paid clean-original and watermark-removal actions is sharing the saved original JPEG. A stamped copy can be adjusted after capture and carries only the selected job fields and logo. The recording shows Plus labels on size, text color and the address chooser. Sitefinch includes size and text-color controls and uses Android's address lookup with manual entry as a fallback. [Timemark plan comparison](https://www.timemark.com/pricing)
+
+Sitefinch records device time and compares saved originals against a local SHA-256 digest. The local photo code identifies a record. Timemark additionally offers network-backed verification, Teamspace, public template sharing, address bookmarks, attendance, checklists, cloud backup and PDF, Excel, collage and KMZ exports. Those are outside the v0.2.0 feature set. [Timemark mobile feature guide](https://help.timemark.com/en/app/) · [Timemark photo verification](https://www.timemark.com/features/photo-verification)

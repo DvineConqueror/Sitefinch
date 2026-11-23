@@ -3,11 +3,13 @@ package app.workphotolog.android
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.Intent
+import android.database.sqlite.SQLiteDatabase
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.net.Uri
 import androidx.core.content.IntentCompat
 import androidx.exifinterface.media.ExifInterface
+import androidx.room.Room
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
@@ -20,12 +22,69 @@ import org.json.JSONObject
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class PhotoRepositoryTest {
+    @Test
+    fun upgradeKeepsExistingPhotoAndProjectData() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val testDb = "upgrade-${UUID.randomUUID()}.db"
+        val digest = "a".repeat(64)
+        try {
+            val file = context.getDatabasePath(testDb)
+            check(file.parentFile?.let { it.isDirectory || it.mkdirs() } == true)
+            SQLiteDatabase.openOrCreateDatabase(file, null).use { legacy ->
+                createLegacySchema(legacy)
+                legacy.execSQL("INSERT INTO projects (id, name) VALUES ('old-project', 'Roof survey')")
+                legacy.execSQL(
+                    "INSERT INTO photos (id, projectId, takenAtMillis, utcOffsetMinutes, note, sha256) " +
+                        "VALUES ('old-photo', 'old-project', 1700000000000, 480, 'Before upgrade', ?)",
+                    arrayOf(digest),
+                )
+            }
+            val database = Room.databaseBuilder(context, PhotoDatabase::class.java, testDb).build()
+            try {
+                val dao = database.photoDao()
+                assertEquals("Roof survey", dao.observeProjects().first().single().name)
+                val photo = dao.observePhotos("old-project").first().single()
+                assertEquals("old-photo", photo.id)
+                assertEquals("Before upgrade", photo.note)
+                assertEquals(digest, photo.sha256)
+                assertNull(photo.stampJson)
+                assertFalse(photo.isVideo)
+            } finally {
+                database.close()
+            }
+        } finally {
+            context.deleteDatabase(testDb)
+        }
+    }
+
+    private fun createLegacySchema(database: SQLiteDatabase) {
+        val schemaPath = PhotoDatabase::class.java.name + "/1.json"
+        val raw = InstrumentationRegistry.getInstrumentation().context.assets
+            .open(schemaPath).bufferedReader().use { it.readText() }
+        val schema = JSONObject(raw).getJSONObject("database")
+        val entities = schema.getJSONArray("entities")
+        for (i in 0 until entities.length()) {
+            val entity = entities.getJSONObject(i)
+            val table = entity.getString("tableName")
+            val placeholder = "${'$'}{TABLE_NAME}"
+            database.execSQL(entity.getString("createSql").replace(placeholder, table))
+            val indices = entity.optJSONArray("indices") ?: continue
+            for (j in 0 until indices.length()) {
+                database.execSQL(indices.getJSONObject(j).getString("createSql").replace(placeholder, table))
+            }
+        }
+        val setup = schema.getJSONArray("setupQueries")
+        for (i in 0 until setup.length()) database.execSQL(setup.getString(i))
+        database.version = schema.getInt("version")
+    }
+
     @Test
     fun originalPersistsAndZipMakesLocationOptional() = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext

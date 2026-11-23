@@ -42,6 +42,11 @@ class PhotoRepository(context: Context) {
         emitAll(dao.observePhotos(projectId))
     }
 
+    fun recent(projectId: String) = flow {
+        initialize()
+        emitAll(dao.observeRecent(projectId))
+    }
+
     suspend fun createProject(name: String): Project = onDisk {
         val title = name.trim()
         require(title.isNotEmpty() && title.length <= 64) { "Enter a project name up to 64 characters." }
@@ -51,9 +56,11 @@ class PhotoRepository(context: Context) {
         }
     }
 
-    fun newCaptureFile(): File = File.createTempFile("capture-", ".jpg", drafts.ensureDirectory())
+    fun newCaptureFile(isVideo: Boolean = false): File =
+        File.createTempFile("capture-", if (isVideo) ".mp4" else ".jpg", drafts.ensureDirectory())
 
-    fun originalFile(photo: Photo): File = File(originals, "${photo.id}.jpg")
+    fun originalFile(photo: Photo): File =
+        File(originals, photo.id + if (photo.isVideo) ".mp4" else ".jpg")
 
     suspend fun saveCapture(draft: CaptureDraft): Photo = onDisk {
         check(dao.hasProject(draft.projectId)) { "Choose an existing project." }
@@ -69,6 +76,7 @@ class PhotoRepository(context: Context) {
         )
         val photo = Photo(
             id, draft.projectId, draft.takenAtMillis, draft.utcOffsetMinutes, note, draft.location, entry.sha256,
+            draft.stampJson, draft.isVideo,
         )
         val destination = originalFile(photo)
         // Keep the move and database write together if the screen closes during a save.
@@ -162,7 +170,7 @@ class PhotoRepository(context: Context) {
     }
 }
 
-private val originalName = Regex("""[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}\.jpg""")
+private val originalName = Regex("""[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}\.(jpg|mp4)""")
 
 internal fun recoverAbandonedOriginals(directory: File, savedPhotoIds: Set<String>) {
     directory.listFiles().orEmpty().forEach { file ->
