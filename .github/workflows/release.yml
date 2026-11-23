@@ -1,0 +1,104 @@
+name: Android release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+
+  release:
+    needs: verify
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: release
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Require a release tag from main
+        run: |
+          [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          git merge-base --is-ancestor HEAD origin/main
+      - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+      - name: Build unsigned ARM64 APK
+        run: |
+          rustup target add aarch64-linux-android
+          sdkmanager 'platforms;android-36' 'build-tools;35.0.0' 'ndk;28.2.13676358'
+          bash ./gradlew :app:assembleRelease --console=plain
+      - name: Sign and verify APK
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        shell: bash
+        run: |
+          : "${ANDROID_KEYSTORE_BASE64:?Release keystore not configured}"
+          : "${ANDROID_KEYSTORE_PASSWORD:?Release keystore password not configured}"
+          : "${ANDROID_KEY_ALIAS:?Release key alias not configured}"
+          : "${ANDROID_KEY_PASSWORD:?Release key password not configured}"
+
+          umask 077
+          scratch="$(mktemp -d)"
+          trap 'rm -rf "$scratch"' EXIT
+          tools="$ANDROID_HOME/build-tools/35.0.0"
+          unsigned=app/build/outputs/apk/release/app-release-unsigned.apk
+          version="$("$tools/aapt2" dump badging "$unsigned" | sed -n "s/^package: .*versionName='\([^']*\)'.*/\1/p")"
+          test "v$version" = "$GITHUB_REF_NAME"
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$scratch/release.keystore"
+          mkdir -p release
+          artifact="work-photo-log-$GITHUB_REF_NAME-arm64-v8a.apk"
+          "$tools/zipalign" -P 16 -f 4 "$unsigned" "$scratch/aligned.apk"
+          "$tools/apksigner" sign \
+            --ks "$scratch/release.keystore" \
+            --ks-key-alias "$ANDROID_KEY_ALIAS" \
+            --ks-pass env:ANDROID_KEYSTORE_PASSWORD \
+            --key-pass env:ANDROID_KEY_PASSWORD \
+            --out "release/$artifact" "$scratch/aligned.apk"
+          "$tools/apksigner" verify --verbose --print-certs "release/$artifact"
+          "$tools/zipalign" -c -P 16 4 "release/$artifact"
+
+          unzip -q "release/$artifact" 'lib/*/*.so' -d "$scratch"
+          test "$(ls -1 "$scratch/lib")" = arm64-v8a
+          test -f "$scratch/lib/arm64-v8a/libproof_core.so"
+          test -f "$scratch/lib/arm64-v8a/libjnidispatch.so"
+          readelf="$ANDROID_HOME/ndk/28.2.13676358/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf"
+          for library in "$scratch"/lib/arm64-v8a/*.so; do
+            alignments="$("$readelf" -lW "$library" | awk '$1 == "LOAD" {print $NF}')"
+            test -n "$alignments"
+            for alignment in $alignments; do
+              if (( alignment < 16384 )); then
+                echo "$library has a LOAD segment aligned to $alignment" >&2
+                exit 1
+              fi
+            done
+          done
+
+          cd release
+          sha256sum "$artifact" > "$artifact.sha256"
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          artifact="work-photo-log-$GITHUB_REF_NAME-arm64-v8a.apk"
+          gh release create "$GITHUB_REF_NAME" \
+            "release/$artifact" "release/$artifact.sha256" \
+            --verify-tag --generate-notes --title "Work Photo Log $GITHUB_REF_NAME"
