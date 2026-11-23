@@ -2,9 +2,14 @@ package app.workphotolog.android
 
 import android.Manifest
 import android.app.Activity
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.graphics.Bitmap
+import android.location.LocationManager
 import android.os.Bundle
+import android.os.SystemClock
 import android.provider.Settings
 import android.view.OrientationEventListener
 import android.view.Surface
@@ -250,21 +255,7 @@ private fun WorkPhotoApp(model: WorkPhotoModel = viewModel()) {
     model.quickPhoto?.let { capture ->
         QuickPhotoSheet(capture, model::shareQuickPhoto, model::openQuickPhotoDetails, model::dismissQuickPhoto)
     }
-    if (showPhotoSettings) {
-        AlertDialog(
-            onDismissRequest = { showPhotoSettings = false },
-            title = { Text("Photo settings") },
-            text = {
-                ToggleRow(
-                    "Save photos to Gallery automatically",
-                    "Saves the photo with its selected stamp. Clean photo saves the original.",
-                    model.autoSaveToGallery,
-                    model::updateAutoSaveToGallery,
-                )
-            },
-            confirmButton = { TextButton(onClick = { showPhotoSettings = false }) { Text("Done") } },
-        )
-    }
+    SitefinchSettings(model, showPhotoSettings) { showPhotoSettings = false }
 
     if (model.showDiscard) {
         AlertDialog(
@@ -283,6 +274,8 @@ private fun CameraPage(model: WorkPhotoModel, project: Project?) {
     val lifecycle = LocalLifecycleOwner.current
     var cameraGranted by remember { mutableStateOf(activity.hasPermission(Manifest.permission.CAMERA)) }
     var locationGranted by remember { mutableStateOf(activity.hasLocationPermission()) }
+    var deviceLocationEnabled by remember { mutableStateOf(activity.isDeviceLocationEnabled()) }
+    var awaitingAppPermission by rememberSaveable { mutableStateOf(false) }
     var askedForCamera by rememberSaveable { mutableStateOf(false) }
     var askedForLocation by rememberSaveable { mutableStateOf(false) }
     var recordAudio by rememberSaveable { mutableStateOf(false) }
@@ -305,7 +298,7 @@ private fun CameraPage(model: WorkPhotoModel, project: Project?) {
     val recent by recentFlow.collectAsStateWithLifecycle(initialValue = null)
     var bindFailed by remember { mutableStateOf(false) }
     var retry by remember { mutableIntStateOf(0) }
-    val activeLocation = model.useLocation && locationGranted
+    val activeLocation = model.useLocation && locationGranted && deviceLocationEnabled
     val template = model.stampTemplate
     val lensFacing = session?.camera?.cameraInfo?.lensFacing
     val heading = rememberCaptureHeading(
@@ -313,27 +306,43 @@ private fun CameraPage(model: WorkPhotoModel, project: Project?) {
         frontFacing = lensFacing?.let { it == CameraSelector.LENS_FACING_FRONT } ?: frontFacing,
     )
     val needsAddress = activeLocation && (showTemplates || showAddress || (template.preset != null && template.showAddress))
-    val showLocationPreview = activeLocation && (template.usesRecordedLocation || showTemplates || needsAddress)
-    val viewfinderFix by produceState<LocationFix?>(null, showLocationPreview) {
+    val showLocationPreview = activeLocation
+    var locationRefresh by remember { mutableIntStateOf(0) }
+    val viewfinderSample by produceState<Pair<LocationFix, Long>?>(null, showLocationPreview, locationRefresh) {
         value = null
         while (showLocationPreview) {
-            value = currentFix(activity)
-            delay(30_000)
+            val fix = currentFix(activity, timeoutMillis = 12_000)
+            value = fix?.let { it to SystemClock.elapsedRealtime() }
+            delay(if (value == null) 1_500 else 15_000)
         }
     }
-    val previewFix = viewfinderFix.takeIf { showLocationPreview }
+    val previewFix = viewfinderSample?.first.takeIf { showLocationPreview }
     val addressFix = previewFix.takeIf { needsAddress }
-    val automaticAddress by produceState<Map<AddressPart, String>>(
-        emptyMap(), addressFix?.latitude, addressFix?.longitude, addressFix?.precision,
+    val addressSample by produceState<Pair<LocationFix, Map<AddressPart, String>>?>(
+        null, addressFix?.latitude, addressFix?.longitude, addressFix?.precision,
     ) {
-        value = emptyMap()
-        value = resolveStampAddress(activity, addressFix)
-        while (addressFix != null && value.isEmpty()) {
-            delay(30_000)
-            value = resolveStampAddress(activity, addressFix)
+        val fix = addressFix ?: run {
+            value = null
+            return@produceState
+        }
+        do {
+            val parts = resolveStampAddress(activity, fix)
+            value = fix to parts
+            if (parts.isNotEmpty()) break
+            delay(5_000)
+        } while (true)
+    }
+    val previewAddress = addressSample?.takeIf { (fix, _) ->
+        addressFix != null && addressFix.latitude == fix.latitude && addressFix.longitude == fix.longitude &&
+            addressFix.precision == fix.precision
+    }?.second.orEmpty()
+    fun openDeviceLocationSettings() {
+        try {
+            activity.startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
+        } catch (_: android.content.ActivityNotFoundException) {
+            model.message("Open Android Settings to turn on device location.")
         }
     }
-    val previewAddress = automaticAddress.takeIf { addressFix != null }.orEmpty()
     val previewMap = rememberStampMap(template.showMap || showTemplates, previewFix)
     val cameraRequest = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
         cameraGranted = it
@@ -341,6 +350,8 @@ private fun CameraPage(model: WorkPhotoModel, project: Project?) {
     val locationRequest = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
         locationGranted = activity.hasLocationPermission()
         model.setLocation(locationGranted)
+        deviceLocationEnabled = activity.isDeviceLocationEnabled()
+        if (locationGranted && !deviceLocationEnabled) openDeviceLocationSettings()
     }
 
     val audioRequest = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
@@ -348,11 +359,27 @@ private fun CameraPage(model: WorkPhotoModel, project: Project?) {
     }
 
     DisposableEffect(lifecycle, activity) {
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) {
+                deviceLocationEnabled = activity.isDeviceLocationEnabled()
+            }
+        }
+        ContextCompat.registerReceiver(activity, receiver, IntentFilter(LocationManager.MODE_CHANGED_ACTION),
+            ContextCompat.RECEIVER_EXPORTED)
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
                 Lifecycle.Event.ON_RESUME -> {
                     cameraGranted = activity.hasPermission(Manifest.permission.CAMERA)
                     locationGranted = activity.hasLocationPermission()
+                    deviceLocationEnabled = activity.isDeviceLocationEnabled()
+                    locationRefresh++
+                    if (awaitingAppPermission) {
+                        awaitingAppPermission = false
+                        if (locationGranted) {
+                            model.setLocation(true)
+                            if (!deviceLocationEnabled) openDeviceLocationSettings()
+                        }
+                    }
                     if (!activity.hasPermission(Manifest.permission.RECORD_AUDIO)) recordAudio = false
                 }
                 Lifecycle.Event.ON_STOP -> model.stopVideo()
@@ -360,7 +387,10 @@ private fun CameraPage(model: WorkPhotoModel, project: Project?) {
             }
         }
         lifecycle.lifecycle.addObserver(observer)
-        onDispose { lifecycle.lifecycle.removeObserver(observer) }
+        onDispose {
+            lifecycle.lifecycle.removeObserver(observer)
+            activity.unregisterReceiver(receiver)
+        }
     }
 
     Column(
@@ -396,7 +426,12 @@ private fun CameraPage(model: WorkPhotoModel, project: Project?) {
                     null, Modifier.size(18.dp),
                 )
                 Text(
-                    if (activeLocation) "Location on" else "Location off",
+                    when {
+                        activeLocation && previewFix == null -> "Finding location…"
+                        activeLocation -> "Location on"
+                        model.useLocation && locationGranted -> "Device location off"
+                        else -> "Location off"
+                    },
                     Modifier.padding(start = 6.dp),
                     maxLines = 1,
                 )
@@ -580,10 +615,14 @@ private fun CameraPage(model: WorkPhotoModel, project: Project?) {
             FilledIconButton(
                 onClick = {
                     val bound = session
+                    val freshFix = viewfinderSample?.takeIf { activeLocation }?.let { (fix, sampledAt) ->
+                        val age = fix.ageMillis + SystemClock.elapsedRealtime() - sampledAt
+                        fix.copy(ageMillis = age).takeIf { age <= 60_000L }
+                    }
                     when {
                         status != null -> model.stopVideo()
-                        bound?.video != null -> model.startVideo(bound.video, recordAudio, heading)
-                        bound?.image != null -> model.capture(bound.image, heading)
+                        bound?.video != null -> model.startVideo(bound.video, recordAudio, heading, freshFix, previewAddress)
+                        bound?.image != null -> model.capture(bound.image, heading, freshFix, previewAddress)
                     }
                 },
                 enabled = ready || (status != null && !model.recordingFinishing),
@@ -693,12 +732,20 @@ private fun CameraPage(model: WorkPhotoModel, project: Project?) {
             automaticAddress = template.copy(address = "", showAddress = true, recordedAddress = previewAddress)
                 .displayAddress(includeRecorded = true),
             gpsEnabled = activeLocation,
+            hasFix = previewFix != null,
             onToggleGps = {
                 when {
-                    locationGranted -> model.setLocation(!model.useLocation)
+                    activeLocation -> model.setLocation(false)
+                    locationGranted -> {
+                        model.setLocation(true)
+                        if (!activity.isDeviceLocationEnabled()) openDeviceLocationSettings()
+                    }
                     askedForLocation && !activity.shouldShowRequestPermissionRationale(
                         Manifest.permission.ACCESS_FINE_LOCATION,
-                    ) -> activity.openApplicationSettings()
+                    ) -> {
+                        awaitingAppPermission = true
+                        activity.openApplicationSettings()
+                    }
                     else -> {
                         askedForLocation = true
                         locationRequest.launch(

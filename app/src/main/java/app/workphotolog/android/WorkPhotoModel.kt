@@ -216,16 +216,35 @@ class WorkPhotoModel(private val app: Application) : AndroidViewModel(app) {
 
     private fun limitNote(note: String) = note.take(500).dropLastWhile(Char::isHighSurrogate)
 
-    fun capture(imageCapture: ImageCapture, headingDegrees: Float? = null) {
+    private suspend fun captureLocation(preview: LocationFix?): LocationFix? {
+        if (!app.isDeviceLocationEnabled() || !app.hasLocationPermission()) return null
+        if (preview?.precision == "precise" && !app.hasPermission(android.Manifest.permission.ACCESS_FINE_LOCATION)) {
+            return currentFix(app)
+        }
+        return preview ?: currentFix(app)
+    }
+
+    private suspend fun captureAddress(
+        fix: LocationFix?,
+        preview: LocationFix?,
+        address: Map<AddressPart, String>,
+    ) = if (fix != null && fix === preview && address.isNotEmpty()) address else resolveStampAddress(app, fix)
+
+    fun capture(
+        imageCapture: ImageCapture,
+        headingDegrees: Float? = null,
+        previewFix: LocationFix? = null,
+        previewAddress: Map<AddressPart, String> = emptyMap(),
+    ) {
         val target = project ?: return
         val selectedStamp = stampTemplate
         val note = nextCaptureNote
         val instant = Instant.now()
         val offset = ZoneId.systemDefault().rules.getOffset(instant).totalSeconds / 60
         perform("Couldn't capture a photo. Try again.") {
-            val location = if (useLocation) async { currentFix(app) } else null
+            val location = if (useLocation) async { captureLocation(previewFix) } else null
             val address = if (location != null && selectedStamp.preset != null && selectedStamp.showAddress) {
-                async { resolveStampAddress(app, location.await()) }
+                async { captureAddress(location.await(), previewFix, previewAddress) }
             } else null
             val stagedFile = withContext(Dispatchers.IO) { repository.newCaptureFile() }
             try {
@@ -255,7 +274,13 @@ class WorkPhotoModel(private val app: Application) : AndroidViewModel(app) {
         }
     }
 
-    internal fun startVideo(camera: VideoCamera, withAudio: Boolean, headingDegrees: Float? = null) {
+    internal fun startVideo(
+        camera: VideoCamera,
+        withAudio: Boolean,
+        headingDegrees: Float? = null,
+        previewFix: LocationFix? = null,
+        previewAddress: Map<AddressPart, String> = emptyMap(),
+    ) {
         val target = project ?: return
         if (captureLocked) return
         val template = stampTemplate
@@ -265,11 +290,11 @@ class WorkPhotoModel(private val app: Application) : AndroidViewModel(app) {
         prepareRecording = viewModelScope.launch {
             var staged: File? = null
             try {
-                val fix = if (includeFix) currentFix(app) else null
+                val fix = if (includeFix) captureLocation(previewFix) else null
                 val instant = Instant.now()
                 val offset = ZoneId.systemDefault().rules.getOffset(instant).totalSeconds / 60
                 val selected = if (template.preset != null && template.showAddress) {
-                    template.copy(recordedAddress = resolveStampAddress(app, fix))
+                    template.copy(recordedAddress = captureAddress(fix, previewFix, previewAddress))
                 } else template
                 val details = selected.preset?.let {
                     stampDetails(target.name, note, instant.toEpochMilli(), offset, fix, selected,
@@ -485,6 +510,17 @@ class WorkPhotoModel(private val app: Application) : AndroidViewModel(app) {
 
     fun message(message: String) {
         notice = message
+    }
+
+    internal fun writeBackup(uri: android.net.Uri) = perform("Couldn't write the backup. Try another folder.") {
+        repository.writeBackup(uri)
+        message("Backup saved.")
+    }
+
+    internal fun restoreBackup(uri: android.net.Uri) = perform("Couldn't restore this Sitefinch backup.") {
+        val count = repository.restoreBackup(uri)
+        stampLibrary = readStampLibrary()
+        message(if (count == 0) "Backup restored. All captures were already present." else "Captures restored: $count.")
     }
 
     fun clearNotice() {

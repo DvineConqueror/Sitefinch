@@ -57,6 +57,7 @@ internal fun CaptureAddressDialog(
     address: String,
     automaticAddress: String,
     gpsEnabled: Boolean,
+    hasFix: Boolean,
     onToggleGps: () -> Unit,
     onSave: (String) -> Unit,
     onDismiss: () -> Unit,
@@ -99,8 +100,12 @@ internal fun CaptureAddressDialog(
                     value, { value = it.take(140) }, label = { Text("Manual address (optional)") },
                     modifier = Modifier.fillMaxWidth(), maxLines = 2,
                 )
-                Text(if (gpsEnabled && automaticAddress.isNotBlank()) "Automatic address · $automaticAddress"
-                    else "Sitefinch fills the stamp address when GPS and an address lookup are available.",
+                Text(when {
+                    !gpsEnabled -> "Turn on location to fill the stamp from your current position."
+                    automaticAddress.isNotBlank() -> "Automatic address · $automaticAddress"
+                    !hasFix -> "Finding your position…"
+                    else -> "Looking up your address. You can enter it manually if lookup is unavailable."
+                },
                     style = MaterialTheme.typography.bodySmall)
                 TextButton(
                     enabled = gpsEnabled && !lookingUp,

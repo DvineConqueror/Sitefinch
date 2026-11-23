@@ -48,6 +48,10 @@ class StampCopyTest {
         val streetParts = setOf(AddressPart.BUILDING_NUMBER, AddressPart.STREET, AddressPart.NEIGHBORHOOD)
         assertEquals("8 Sample Road, Sample Barangay", saved.copy(addressParts = streetParts).displayAddress(true))
         assertTrue(result.stampParts(precise = false).keys.none { it in streetParts })
+        assertEquals("Remote job", saved.copy(
+            addressParts = streetParts,
+            recordedAddress = result.stampParts(precise = false),
+        ).displayAddress(true))
         val hidden = StampTemplate.fromJson(saved.copy(addressParts = emptySet()).toJson())
         assertEquals("", hidden.displayAddress(includeRecorded = true))
     }

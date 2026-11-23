@@ -37,15 +37,17 @@ internal fun Address.stampParts(precise: Boolean): Map<AddressPart, String> {
 
 internal suspend fun resolveStampAddress(context: Context, fix: LocationFix?): Map<AddressPart, String> {
     if (fix == null) return emptyMap()
-    return withTimeoutOrNull(2_500) {
+    return withTimeoutOrNull(4_000) {
         findAddresses(context, query = null, fix = fix)
-            .firstNotNullOfOrNull { it.stampParts(fix.precision == "precise").takeIf { parts -> parts.isNotEmpty() } }
+            .map { it.stampParts(fix.precision == "precise") }
+            .maxByOrNull { parts -> parts.size + defaultAddressParts.count { it in parts } * 3 }
     }.orEmpty()
 }
 
 internal fun StampTemplate.displayAddress(includeRecorded: Boolean): String {
     if (!showAddress) return ""
     if (!includeRecorded || recordedAddress.isEmpty()) return address.trim()
+    if (addressParts.isEmpty()) return ""
     val street = listOfNotNull(
         recordedAddress[AddressPart.BUILDING_NUMBER].takeIf { AddressPart.BUILDING_NUMBER in addressParts },
         recordedAddress[AddressPart.STREET].takeIf { AddressPart.STREET in addressParts },
@@ -57,5 +59,5 @@ internal fun StampTemplate.displayAddress(includeRecorded: Boolean): String {
             part in addressParts -> recordedAddress[part]
             else -> null
         }
-    }.distinctBy { it.lowercase() }.joinToString(", ").boundedStampText()
+    }.distinctBy { it.lowercase() }.joinToString(", ").ifBlank { address.trim() }.boundedStampText()
 }

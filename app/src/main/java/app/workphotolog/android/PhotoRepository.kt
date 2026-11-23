@@ -1,6 +1,7 @@
 package app.workphotolog.android
 
 import android.content.Context
+import android.net.Uri
 import androidx.room.Room
 import androidx.room.withTransaction
 import java.io.File
@@ -117,6 +118,15 @@ class PhotoRepository(context: Context) {
         output
     }
 
+    suspend fun writeBackup(uri: Uri): Unit = onDisk {
+        val (projects, photos) = database.withTransaction { dao.backupProjects() to dao.backupPhotos() }
+        LibraryBackup(app, database).write(uri, projects, photos, ::originalFile)
+    }
+
+    suspend fun restoreBackup(uri: Uri): Int = onDisk {
+        LibraryBackup(app, database).restore(uri, ::originalFile)
+    }
+
     private fun Photo.toEntry(file: File) = CaptureEntry(
         CaptureMetadata(id, takenAtMillis, utcOffsetMinutes, note, location?.toRust()),
         sha256,
@@ -143,6 +153,7 @@ class PhotoRepository(context: Context) {
             }
 
             recoverAbandonedOriginals(originals, dao.photoIds().toHashSet())
+            LibraryBackup.clearInterruptedRestores(app.cacheDir)
             val expiry = System.currentTimeMillis() - TimeUnit.DAYS.toMillis(1)
             listOf(drafts, shared).forEach { directory ->
                 directory.listFiles().orEmpty().filter { it.isFile && it.lastModified() < expiry }.forEach { it.delete() }

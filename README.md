@@ -6,11 +6,11 @@ Android camera for documenting work by project. Capture photos and clips offline
 
 1. Open Camera, choose a project, and select Photo or Video.
 2. Open Templates and select a preset or Clean photo. Explore more templates by job category. In Customize, switch individual stamp fields on or off and add a business card or styled note. In Style, pick the layout, background opacity, typeface, and text and clock sizes. Drag the stamp, logo, clock, or details on the preview, or use the move buttons. In Logo, import an image and choose its shape and crop. The Style controls let you apply colors from that image to the background, accents, and text. Save style adds it to your reusable library.
-3. Turn on Location to fill the stamp address through Android’s address lookup. In **Customize → Details → Address**, choose which parts appear. Municipality/city and province/county are selected by default. Enter an optional manual address for captures with Location off or when lookup is unavailable. The note button adds a note to the next capture.
+3. Turn on Location to fill the stamp address through Android’s address lookup. If device Location is off, Sitefinch opens Android Settings so you can enable it. In **Customize → Details → Address**, choose which parts appear. Municipality/city and province/county are selected by default. Enter an optional manual address for captures with Location off or when lookup is unavailable. The note button adds a note to the next capture.
 4. Tap the photo shutter. Sitefinch keeps the original JPEG in the project and automatically saves a stamped copy to Android Gallery under `Pictures/Sitefinch`. The Clean photo template saves the original JPEG to Gallery. Use **Share** on the capture preview to share the same photo, or dismiss the preview to keep shooting. Turn off Gallery saving in Photo settings. Photo details can still share the original or make a copy with stamps or markup.
 5. Video renders the chosen stamp while recording. Enable the microphone when you want audio. Project ZIPs include original JPEGs and a manifest, with optional GPS metadata. Share clips individually.
 
-Every stamp control is available without a subscription. Media carries no Sitefinch watermark. Records and saved styles live on this device. Share ZIPs you need to keep outside the app before clearing app data or uninstalling.
+Every stamp control is available without a subscription. Media carries no Sitefinch watermark. Records and saved styles live on this device. Open **Sitefinch settings → Library backup** to create a ZIP in a folder you choose. Restore merges its projects, originals, and saved styles into the current library. Keep a copy outside the device if you need to recover after losing it. The ZIP includes recorded location and is unencrypted.
 
 Map, coordinates, and altitude use the recorded location when available. The map is an offline regional locator. Compass uses the device’s magnetic heading. Weather is entered manually.
 
@@ -30,6 +30,10 @@ cargo test --locked --workspace
 Use `./gradlew` on Linux or macOS. Connect a test phone or boot an Android x86_64 emulator before running `:app:connectedDebugAndroidTest`. On a physical phone, also check real capture and orientation, approximate and denied GPS, share grants, and interruption during save.
 
 ## Release
+
+Install the first updater-capable signed ARM64 release once from GitHub. After that, Sitefinch checks for newer published releases when opened. **Check for updates** in Settings also works after dismissing a version. Android asks you to allow installs from Sitefinch and confirm the update.
+
+For each release, increase both the numeric `versionCode` and stable `versionName` in `app/build.gradle.kts`, then publish the matching `vMAJOR.MINOR.PATCH` tag from `main`. Use the same signing key so Android can update the app in place.
 
 GitHub Actions checks the Rust core and Android app on pull requests. Tagged releases use a dedicated keystore in the protected `release` environment. Keep a backup of that keystore to sign future updates with the same identity.
 

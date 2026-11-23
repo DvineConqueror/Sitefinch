@@ -10,7 +10,9 @@ import android.os.SystemClock
 import android.view.accessibility.AccessibilityNodeInfo
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isEnabled
@@ -307,7 +309,10 @@ class MainActivitySmokeTest {
         compose.onNodeWithTag("stampLargeClock").performScrollTo().performClick()
         compose.onNodeWithTag("stampTypographySERIF").performScrollTo().performClick()
         compose.onNodeWithTag("stampSizeLARGE").performScrollTo().performClick()
-        compose.onNodeWithTag("stampDragCanvas").performScrollTo()
+        val dragCanvas = hasTestTag("stampDragCanvas")
+        if (compose.onAllNodes(dragCanvas and hasAnyAncestor(hasScrollAction())).fetchSemanticsNodes().isNotEmpty()) {
+            compose.onNode(dragCanvas).performScrollTo()
+        }
         for (startX in listOf(0.17f, 0.37f, 0.46f)) {
             compose.onNodeWithTag("stampDragCanvas").performTouchInput {
                 down(Offset(width * startX, height * 0.85f))

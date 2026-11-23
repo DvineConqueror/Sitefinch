@@ -40,6 +40,9 @@ import kotlin.coroutines.resumeWithException
 import kotlin.math.roundToInt
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.launch
 
 fun Context.hasPermission(permission: String): Boolean =
     ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED
@@ -47,6 +50,9 @@ fun Context.hasPermission(permission: String): Boolean =
 fun Context.hasLocationPermission(): Boolean =
     hasPermission(Manifest.permission.ACCESS_COARSE_LOCATION) ||
         hasPermission(Manifest.permission.ACCESS_FINE_LOCATION)
+
+internal fun Context.isDeviceLocationEnabled(): Boolean =
+    getSystemService(LocationManager::class.java)?.isLocationEnabled == true
 
 suspend fun ImageCapture.captureFile(file: File, executor: Executor) =
     suspendCancellableCoroutine { continuation ->
@@ -69,33 +75,61 @@ suspend fun ImageCapture.captureFile(file: File, executor: Executor) =
 private const val MAX_LOCATION_AGE_MILLIS = 60_000L
 
 @SuppressLint("MissingPermission")
-suspend fun currentFix(context: Context): LocationFix? {
+suspend fun currentFix(context: Context, timeoutMillis: Long = 4_000): LocationFix? {
     val precise = context.hasPermission(Manifest.permission.ACCESS_FINE_LOCATION)
     if (!precise && !context.hasPermission(Manifest.permission.ACCESS_COARSE_LOCATION)) return null
     val manager = context.getSystemService(LocationManager::class.java) ?: return null
-    val candidates = if (precise) {
-        listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
-    } else {
-        listOf(LocationManager.NETWORK_PROVIDER)
-    }
+    if (!manager.isLocationEnabled) return null
+    val candidates = listOf("fused", LocationManager.NETWORK_PROVIDER) +
+        listOfNotNull(LocationManager.GPS_PROVIDER.takeIf { precise })
 
     return try {
-        val available = candidates.filter(manager::isProviderEnabled)
-        val cached = available.mapNotNull { manager.getLastKnownLocation(it)?.toFix(precise) }
-            .minByOrNull { it.ageMillis }
-        cached ?: available.firstOrNull()?.let { provider ->
-            withTimeoutOrNull(2200L) {
-                suspendCancellableCoroutine { continuation ->
-                    val cancel = CancellationSignal()
-                    continuation.invokeOnCancellation { cancel.cancel() }
-                    LocationManagerCompat.getCurrentLocation(
-                        manager, provider, cancel, ContextCompat.getMainExecutor(context),
-                    ) { location ->
-                        if (continuation.isActive) continuation.resume(location?.toFix(precise))
+        val available = candidates.filter { it in manager.allProviders && manager.isProviderEnabled(it) }
+        val cached = available.mapNotNull { provider ->
+            runCatching { manager.getLastKnownLocation(provider)?.toFix(precise) }.getOrNull()
+        }.minWithOrNull(compareBy({ it.precision != "precise" }, { it.ageMillis }))
+        if (cached != null && (!precise || cached.precision == "precise")) return cached
+        var approximate = cached
+        withTimeoutOrNull(timeoutMillis) {
+            coroutineScope {
+                val fixes = Channel<LocationFix?>(available.size)
+                val requests = available.map { provider ->
+                    launch {
+                        val fix = try {
+                            suspendCancellableCoroutine<LocationFix?> { continuation ->
+                                val cancel = CancellationSignal()
+                                continuation.invokeOnCancellation { cancel.cancel() }
+                                LocationManagerCompat.getCurrentLocation(
+                                    manager, provider, cancel, ContextCompat.getMainExecutor(context),
+                                ) { location ->
+                                    if (continuation.isActive) continuation.resume(location?.toFix(precise))
+                                }
+                            }
+                        } catch (_: SecurityException) {
+                            null
+                        } catch (_: IllegalArgumentException) {
+                            null
+                        }
+                        fixes.send(fix)
                     }
                 }
+                try {
+                    repeat(available.size) {
+                        val fix = fixes.receive()
+                        if (fix != null) {
+                            if (!precise || fix.precision == "precise") return@coroutineScope fix
+                            if (approximate == null || fix.ageMillis < checkNotNull(approximate).ageMillis) {
+                                approximate = fix
+                            }
+                        }
+                    }
+                    approximate
+                } finally {
+                    requests.forEach { it.cancel() }
+                    fixes.cancel()
+                }
             }
-        }
+        } ?: approximate
     } catch (_: SecurityException) {
         null
     } catch (_: IllegalArgumentException) {
@@ -106,7 +140,7 @@ suspend fun currentFix(context: Context): LocationFix? {
 private fun Location.toFix(finePermission: Boolean): LocationFix? {
     val age = ((SystemClock.elapsedRealtimeNanos() - elapsedRealtimeNanos) / 1_000_000L)
     if (age !in 0L..MAX_LOCATION_AGE_MILLIS || !hasAccuracy()) return null
-    val isPrecise = finePermission && provider == LocationManager.GPS_PROVIDER
+    val isPrecise = finePermission && (provider == LocationManager.GPS_PROVIDER || accuracy <= 100f)
     return LocationFix(
         latitude, longitude, accuracy.toDouble(), age,
         if (isPrecise) "precise" else "approximate",

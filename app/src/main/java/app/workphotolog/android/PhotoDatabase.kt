@@ -80,6 +80,12 @@ internal interface PhotoDao {
     @Query("SELECT id FROM photos")
     suspend fun photoIds(): List<String>
 
+    @Query("SELECT * FROM projects ORDER BY id")
+    suspend fun backupProjects(): List<ProjectRow>
+
+    @Query("SELECT * FROM photos ORDER BY id")
+    suspend fun backupPhotos(): List<Photo>
+
     @Query("SELECT EXISTS(SELECT 1 FROM projects WHERE id = :projectId)")
     suspend fun hasProject(projectId: String): Boolean
 
