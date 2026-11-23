@@ -1,8 +1,10 @@
 package app.workphotolog.android
 
 import android.Manifest
+import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.Color
+import android.os.ParcelFileDescriptor
 import android.os.SystemClock
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasContentDescription
@@ -111,6 +113,47 @@ class MainActivitySmokeTest {
                 bitmap.recycle()
             }
         }
+    }
+
+    @Test
+    fun cameraControlsStayAccessibleWithLargeTextDarkThemeAndReducedMotion() {
+        val fontScale = shell("settings get system font_scale")
+        val animationScale = shell("settings get global animator_duration_scale")
+        val nightMode = shell("cmd uimode night").substringAfterLast(' ').trim()
+        check(nightMode in listOf("yes", "no", "auto", "custom"))
+
+        try {
+            shell("settings put system font_scale 1.5")
+            shell("settings put global animator_duration_scale 0")
+            shell("cmd uimode night yes")
+            compose.waitUntil(15_000) {
+                val configuration = compose.activity.resources.configuration
+                configuration.fontScale >= 1.5f &&
+                    (configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
+            }
+            assertTrue(shell("settings get global animator_duration_scale").toFloat() == 0f)
+            waitForShutter()
+            compose.onNodeWithTag("projectPicker").assertIsDisplayed()
+            compose.onNodeWithText("Album").assertIsDisplayed()
+            compose.onNodeWithText("Location off").assertIsDisplayed()
+            val activeWindow = InstrumentationRegistry.getInstrumentation().uiAutomation.rootInActiveWindow
+            val shutters = activeWindow?.findAccessibilityNodeInfosByText("Take photo").orEmpty()
+            assertTrue(shutters.any { it.contentDescription == "Take photo" && it.isVisibleToUser })
+            captureScreenshot("smoke-camera-accessibility.png")
+        } finally {
+            restoreSetting("system font_scale", fontScale)
+            restoreSetting("global animator_duration_scale", animationScale)
+            shell("cmd uimode night $nightMode")
+        }
+    }
+
+    private fun restoreSetting(key: String, value: String) {
+        if (value == "null") shell("settings delete $key") else shell("settings put $key $value")
+    }
+
+    private fun shell(command: String): String {
+        val descriptor = InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand(command)
+        return ParcelFileDescriptor.AutoCloseInputStream(descriptor).bufferedReader().use { it.readText().trim() }
     }
 
     private fun createProject(name: String) {
