@@ -189,6 +189,7 @@ class MainActivitySmokeTest {
             val dismissPreview = hasContentDescription("Dismiss photo preview")
             if (compose.onAllNodes(dismissPreview).fetchSemanticsNodes().isNotEmpty()) {
                 compose.onNode(dismissPreview).performClick()
+                compose.waitForIdle()
             }
             val templates = hasTestTag("templates") and isEnabled()
             if (compose.onAllNodes(templates).fetchSemanticsNodes().isNotEmpty()) {
