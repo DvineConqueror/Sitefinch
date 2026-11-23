@@ -76,7 +76,7 @@ class PhotoRepository(context: Context) {
         )
         val photo = Photo(
             id, draft.projectId, draft.takenAtMillis, draft.utcOffsetMinutes, note, draft.location, entry.sha256,
-            draft.stampJson, draft.isVideo,
+            draft.stampJson, draft.isVideo, draft.headingDegrees,
         )
         val destination = originalFile(photo)
         // Keep the move and database write together if the screen closes during a save.

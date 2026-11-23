@@ -1,5 +1,6 @@
 package app.workphotolog.android
 
+import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
 
@@ -46,6 +47,36 @@ enum class StampLogoSide(val label: String) {
     LEFT("Left"), RIGHT("Right"),
 }
 
+enum class StampLogoShape(val label: String) {
+    CIRCLE("Circle"), SQUARE("Square"), ROUNDED("Rounded"),
+}
+
+enum class StampNoteStyle(val label: String) {
+    PLAIN("Plain"), HIGHLIGHT("Highlight"), ALERT("Alert"),
+}
+
+enum class StampBackground(val label: String) {
+    PRESET("Preset"), SOLID("Solid color"), NONE("None"),
+}
+
+enum class StampTypography(val label: String, internal val family: String?) {
+    SYSTEM("System", null),
+    CONDENSED("Condensed", "sans-serif-condensed"),
+    SERIF("Serif", "serif"),
+    MONO("Mono", "monospace"),
+}
+
+enum class StampGroup { WHOLE, LOGO, CLOCK, DETAILS }
+
+data class StampOffset(val x: Float = 0f, val y: Float = 0f) {
+    internal fun bounded() = StampOffset(
+        x.boundedStampValue(-1f, 1f, 0f),
+        y.boundedStampValue(-1f, 1f, 0f),
+    )
+
+    internal fun toJson() = JSONObject().put("x", x.toDouble()).put("y", y.toDouble())
+}
+
 data class StampTemplate(
     val preset: StampPreset? = null,
     val color: StampColor = StampColor.OLIVE,
@@ -67,17 +98,73 @@ data class StampTemplate(
     val logoId: String? = null,
     val logoSide: StampLogoSide = StampLogoSide.LEFT,
     val logoZoom: Float = 1f,
+    val showLogo: Boolean = true,
+    val showCompany: Boolean = true,
+    val showTitle: Boolean = true,
+    val showSite: Boolean = true,
+    val showAddress: Boolean = true,
+    val showTags: Boolean = true,
+    val showEmployeeName: Boolean = true,
+    val showEmployeeNumber: Boolean = true,
+    val showBusinessCard: Boolean = false,
+    val showStyledNote: Boolean = false,
+    val showWeather: Boolean = false,
+    val showMap: Boolean = false,
+    val showAltitude: Boolean = false,
+    val showCompass: Boolean = false,
+    val logoShape: StampLogoShape = StampLogoShape.SQUARE,
+    val businessCardName: String = "",
+    val businessCardRole: String = "",
+    val businessCardContact: String = "",
+    val styledNote: String = "",
+    val weather: String = "",
+    val styledNoteStyle: StampNoteStyle = StampNoteStyle.PLAIN,
+    val background: StampBackground = StampBackground.PRESET,
+    val backgroundOpacity: Float = 1f,
+    val primaryColorArgb: Int? = null,
+    val accentColorArgb: Int? = null,
+    val textColorArgb: Int? = null,
+    val largeClock: Boolean? = null,
+    val typography: StampTypography = StampTypography.SYSTEM,
+    val textScale: Float = 1f,
+    val clockScale: Float = 1f,
+    val stampOffset: StampOffset = StampOffset(),
+    val logoOffset: StampOffset = StampOffset(),
+    val clockOffset: StampOffset = StampOffset(),
+    val detailsOffset: StampOffset = StampOffset(),
+    val addressParts: Set<AddressPart> = defaultAddressParts,
+    val recordedAddress: Map<AddressPart, String> = emptyMap(),
 ) {
     val displayName: String?
         get() = preset?.let { heading.ifBlank { it.label } }
 
+    val usesLargeClock: Boolean
+        get() = largeClock ?: (layout == StampLayout.CLOCK)
+
+    fun offsetFor(group: StampGroup): StampOffset = when (group) {
+        StampGroup.WHOLE -> stampOffset
+        StampGroup.LOGO -> logoOffset
+        StampGroup.CLOCK -> clockOffset
+        StampGroup.DETAILS -> detailsOffset
+    }
+
+    fun withOffset(group: StampGroup, offset: StampOffset): StampTemplate {
+        val bounded = offset.bounded()
+        return when (group) {
+            StampGroup.WHOLE -> copy(stampOffset = bounded)
+            StampGroup.LOGO -> copy(logoOffset = bounded)
+            StampGroup.CLOCK -> copy(clockOffset = bounded)
+            StampGroup.DETAILS -> copy(detailsOffset = bounded)
+        }
+    }
+
     fun toJson(): String = JSONObject()
         .put("preset", preset?.name)
         .put("color", color.name)
-        .put("heading", heading)
-        .put("organization", organization)
-        .put("worker", worker)
-        .put("site", site)
+        .put("heading", heading.boundedStampText())
+        .put("organization", organization.boundedStampText())
+        .put("worker", worker.boundedStampText())
+        .put("site", site.boundedStampText())
         .put("showTime", showTime)
         .put("showNote", showNote)
         .put("showCoordinates", showCoordinates)
@@ -85,20 +172,56 @@ data class StampTemplate(
         .put("position", position.name)
         .put("size", size.name)
         .put("textColor", textColor.name)
-        .put("employeeNumber", employeeNumber)
-        .put("address", address)
-        .put("tags", tags)
+        .put("employeeNumber", employeeNumber.boundedStampText())
+        .put("address", address.boundedStampText())
+        .put("tags", tags.boundedStampText())
         .put("showPhotoCode", showPhotoCode)
-        .put("logoId", logoId)
+        .put("logoId", logoId?.takeIf(::validStampLogoId))
         .put("logoSide", logoSide.name)
         .put("logoZoom", boundedLogoZoom(logoZoom).toDouble())
+        .put("showLogo", showLogo)
+        .put("showCompany", showCompany)
+        .put("showTitle", showTitle)
+        .put("showSite", showSite)
+        .put("showAddress", showAddress)
+        .put("addressParts", JSONArray(addressParts.map { it.name }))
+        .put("recordedAddress", JSONObject(recordedAddress.mapKeys { it.key.name }.mapValues { it.value.boundedStampText() }))
+        .put("showTags", showTags)
+        .put("showEmployeeName", showEmployeeName)
+        .put("showEmployeeNumber", showEmployeeNumber)
+        .put("showBusinessCard", showBusinessCard)
+        .put("showStyledNote", showStyledNote)
+        .put("showWeather", showWeather)
+        .put("showMap", showMap)
+        .put("showAltitude", showAltitude)
+        .put("showCompass", showCompass)
+        .put("logoShape", logoShape.name)
+        .put("businessCardName", businessCardName.boundedStampText())
+        .put("businessCardRole", businessCardRole.boundedStampText())
+        .put("businessCardContact", businessCardContact.boundedStampText())
+        .put("styledNote", styledNote.boundedStampText())
+        .put("weather", weather.boundedStampText())
+        .put("styledNoteStyle", styledNoteStyle.name)
+        .put("background", background.name)
+        .put("backgroundOpacity", backgroundOpacity.boundedStampValue(0f, 1f).toDouble())
+        .put("primaryColorArgb", primaryColorArgb)
+        .put("accentColorArgb", accentColorArgb)
+        .put("textColorArgb", textColorArgb)
+        .put("largeClock", largeClock)
+        .put("typography", typography.name)
+        .put("textScale", textScale.boundedStampValue(0.75f, 1.5f).toDouble())
+        .put("clockScale", clockScale.boundedStampValue(0.75f, 1.6f).toDouble())
+        .put("stampOffset", stampOffset.bounded().toJson())
+        .put("logoOffset", logoOffset.bounded().toJson())
+        .put("clockOffset", clockOffset.bounded().toJson())
+        .put("detailsOffset", detailsOffset.bounded().toJson())
         .toString()
 
     companion object {
         val DEFAULT_COPY = StampTemplate(StampPreset.FIELD_NOTE)
 
         fun fromJson(value: String?): StampTemplate {
-            if (value.isNullOrBlank()) return StampTemplate()
+            if (value == null || value.length > MAX_STAMP_JSON_LENGTH || value.isBlank()) return StampTemplate()
             val data = try {
                 JSONObject(value)
             } catch (_: JSONException) {
@@ -122,17 +245,86 @@ data class StampTemplate(
                 address = data.string("address"),
                 tags = data.string("tags"),
                 showPhotoCode = data.optBoolean("showPhotoCode", false),
-                logoId = (data.opt("logoId") as? String)?.takeIf { it.isNotBlank() },
+                logoId = (data.opt("logoId") as? String)?.takeIf(::validStampLogoId),
                 logoSide = data.enum<StampLogoSide>("logoSide") ?: StampLogoSide.LEFT,
                 logoZoom = boundedLogoZoom(data.optDouble("logoZoom", 1.0).toFloat()),
+                showLogo = data.optBoolean("showLogo", true),
+                showCompany = data.optBoolean("showCompany", true),
+                showTitle = data.optBoolean("showTitle", true),
+                showSite = data.optBoolean("showSite", true),
+                showAddress = data.optBoolean("showAddress", true),
+                addressParts = data.optJSONArray("addressParts")?.let { parts ->
+                    val names = (0 until parts.length()).map { parts.optString(it) }.toSet()
+                    AddressPart.entries.filterTo(mutableSetOf()) { it.name in names }
+                } ?: defaultAddressParts,
+                recordedAddress = data.optJSONObject("recordedAddress")?.let { parts ->
+                    AddressPart.entries.mapNotNull { part ->
+                        parts.string(part.name).takeIf(String::isNotBlank)?.let { part to it }
+                    }.toMap()
+                }.orEmpty(),
+                showTags = data.optBoolean("showTags", true),
+                showEmployeeName = data.optBoolean("showEmployeeName", true),
+                showEmployeeNumber = data.optBoolean("showEmployeeNumber", true),
+                showBusinessCard = data.optBoolean("showBusinessCard", false),
+                showStyledNote = data.optBoolean("showStyledNote", false),
+                showWeather = data.optBoolean("showWeather", false),
+                showMap = data.optBoolean("showMap", false),
+                showAltitude = data.optBoolean("showAltitude", false),
+                showCompass = data.optBoolean("showCompass", false),
+                logoShape = data.enum<StampLogoShape>("logoShape") ?: StampLogoShape.SQUARE,
+                businessCardName = data.string("businessCardName"),
+                businessCardRole = data.string("businessCardRole"),
+                businessCardContact = data.string("businessCardContact"),
+                styledNote = data.string("styledNote"),
+                weather = data.string("weather"),
+                styledNoteStyle = data.enum<StampNoteStyle>("styledNoteStyle") ?: StampNoteStyle.PLAIN,
+                background = data.enum<StampBackground>("background") ?: StampBackground.PRESET,
+                backgroundOpacity = data.optDouble("backgroundOpacity", 1.0).toFloat().boundedStampValue(0f, 1f),
+                primaryColorArgb = data.color("primaryColorArgb"),
+                accentColorArgb = data.color("accentColorArgb"),
+                textColorArgb = data.color("textColorArgb"),
+                largeClock = data.opt("largeClock") as? Boolean,
+                typography = data.enum<StampTypography>("typography") ?: StampTypography.SYSTEM,
+                textScale = data.optDouble("textScale", 1.0).toFloat().boundedStampValue(0.75f, 1.5f),
+                clockScale = data.optDouble("clockScale", 1.0).toFloat().boundedStampValue(0.75f, 1.6f),
+                stampOffset = data.offset("stampOffset"),
+                logoOffset = data.offset("logoOffset"),
+                clockOffset = data.offset("clockOffset"),
+                detailsOffset = data.offset("detailsOffset"),
             )
         }
     }
 }
+
+private fun JSONObject.color(key: String): Int? {
+    val value = (opt(key) as? Number)?.toDouble() ?: return null
+    return value.toInt().takeIf { it.toDouble() == value }
+}
+
+private fun JSONObject.offset(key: String): StampOffset {
+    val coordinates = optJSONObject(key) ?: return StampOffset()
+    return StampOffset(
+        coordinates.optDouble("x", 0.0).toFloat(),
+        coordinates.optDouble("y", 0.0).toFloat(),
+    ).bounded()
+}
+
+internal fun Float.boundedStampValue(minimum: Float, maximum: Float, fallback: Float = 1f): Float =
+    if (isFinite()) coerceIn(minimum, maximum) else fallback
 
 internal fun boundedLogoZoom(zoom: Float): Float = if (zoom.isFinite()) zoom.coerceIn(1f, 3f) else 1f
 
 private inline fun <reified T : Enum<T>> JSONObject.enum(key: String): T? =
     enumValues<T>().firstOrNull { it.name == opt(key) }
 
-private fun JSONObject.string(key: String): String = opt(key) as? String ?: ""
+private fun JSONObject.string(key: String): String = (opt(key) as? String)?.boundedStampText().orEmpty()
+
+private const val MAX_STAMP_JSON_LENGTH = 65_536
+private const val MAX_STAMP_TEXT_LENGTH = 512
+
+internal fun String.boundedStampText(): String {
+    if (length <= MAX_STAMP_TEXT_LENGTH) return this
+    val limit = if (this[MAX_STAMP_TEXT_LENGTH - 1].isHighSurrogate()) MAX_STAMP_TEXT_LENGTH - 1
+        else MAX_STAMP_TEXT_LENGTH
+    return substring(0, limit)
+}

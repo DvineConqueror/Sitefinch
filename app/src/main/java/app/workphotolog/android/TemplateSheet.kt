@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -60,6 +61,14 @@ private val templateSaver = Saver<StampTemplate, String>(
     restore = { StampTemplate.fromJson(it) },
 )
 
+private enum class TemplateTab(val label: String, val tag: String) {
+    PRESETS("Presets", "presetStyles"), EXPLORE("Explore", "exploreStyles"), SAVED("Saved styles", "savedStyles"),
+}
+
+private enum class ExploreCategory(val label: String) {
+    ALL("All"), DAILY("Daily work"), INSPECTION("Inspection"), ASSETS("Assets"), HANDOVER("Handover"),
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun StampTemplateSheet(
@@ -73,11 +82,12 @@ fun StampTemplateSheet(
 ) {
     var draft by rememberSaveable(stateSaver = templateSaver) { mutableStateOf(template) }
     var editing by rememberSaveable { mutableStateOf(false) }
-    var showSaved by rememberSaveable { mutableStateOf(false) }
+    var tab by rememberSaveable { mutableStateOf(TemplateTab.PRESETS) }
+    var category by rememberSaveable { mutableStateOf(ExploreCategory.ALL) }
     var query by rememberSaveable { mutableStateOf("") }
     var activeName by rememberSaveable { mutableStateOf<String?>(null) }
     var activePreset by rememberSaveable {
-        mutableStateOf(starterTemplates.firstOrNull { it.template == template }?.tag)
+        mutableStateOf((starterTemplates + exploreTemplates).firstOrNull { it.template == template }?.tag)
     }
     var saving by rememberSaveable { mutableStateOf(false) }
     var removeName by rememberSaveable { mutableStateOf<String?>(null) }
@@ -123,19 +133,45 @@ fun StampTemplateSheet(
                         .padding(horizontal = 20.dp, vertical = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        FilterChip(!showSaved, { showSaved = false }, { Text("Presets") })
-                        FilterChip(showSaved, { showSaved = true }, { Text("Saved styles") }, modifier = Modifier.testTag("savedStyles"))
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        for (destination in TemplateTab.entries) {
+                            FilterChip(
+                                selected = tab == destination,
+                                onClick = {
+                                    if (tab != destination) query = ""
+                                    tab = destination
+                                },
+                                label = { Text(destination.label) },
+                                modifier = Modifier.testTag(destination.tag),
+                            )
+                        }
                     }
                     OutlinedTextField(
                         value = query,
                         onValueChange = { query = it.take(64) },
                         label = { Text("Search styles") },
                         leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null) },
+                        trailingIcon = if (query.isNotEmpty()) ({
+                            IconButton(onClick = { query = "" }) {
+                                Icon(Icons.Outlined.Close, contentDescription = "Clear search")
+                            }
+                        }) else null,
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth().testTag("searchTemplates"),
                     )
-                    if (showSaved) {
+                    if (tab == TemplateTab.EXPLORE) {
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            for (filter in ExploreCategory.entries) {
+                                FilterChip(
+                                    selected = category == filter,
+                                    onClick = { category = filter },
+                                    label = { Text(filter.label) },
+                                    modifier = Modifier.testTag("exploreCategory" + filter.name),
+                                )
+                            }
+                        }
+                    }
+                    if (tab == TemplateTab.SAVED) {
                         val entries = library.entries.filter { it.key.contains(query.trim(), ignoreCase = true) }
                             .sortedBy { it.key.lowercase() }
                         if (entries.isEmpty()) {
@@ -164,9 +200,16 @@ fun StampTemplateSheet(
                             }
                         }
                     } else {
-                        val options = starterTemplates.filter {
-                            it.title.contains(query.trim(), ignoreCase = true) ||
-                                it.description.contains(query.trim(), ignoreCase = true)
+                        val catalog = if (tab == TemplateTab.EXPLORE) exploreTemplates else starterTemplates
+                        val search = query.trim()
+                        val options = catalog.filter { option ->
+                            val matchesCategory = tab != TemplateTab.EXPLORE ||
+                                category == ExploreCategory.ALL || option.category == category
+                            matchesCategory && (
+                                option.title.contains(search, ignoreCase = true) ||
+                                    option.description.contains(search, ignoreCase = true) ||
+                                    option.category?.label?.contains(search, ignoreCase = true) == true
+                            )
                         }
                         if (options.isEmpty()) {
                             Text("No styles match your search.", modifier = Modifier.padding(vertical = 12.dp))
@@ -236,6 +279,7 @@ private data class StarterTemplate(
     val description: String,
     val tag: String,
     val template: StampTemplate,
+    val category: ExploreCategory? = null,
 )
 
 private val starterTemplates = listOf(
@@ -280,6 +324,73 @@ private val starterTemplates = listOf(
     StarterTemplate(
         "Cleaning", "Record a finished clean", "templateCleaning",
         StampTemplate(StampPreset.COMPLETION, StampColor.LILAC, heading = "Cleaning", layout = StampLayout.PLAIN),
+    ),
+)
+
+private val exploreTemplates = listOf(
+    StarterTemplate(
+        "Shift log", "Clock a crew onto the site", "exploreShiftLog",
+        StampTemplate(
+            StampPreset.SITE_VISIT, StampColor.JADE, heading = "Shift log", layout = StampLayout.CLOCK,
+            showNote = false,
+        ),
+        ExploreCategory.DAILY,
+    ),
+    StarterTemplate(
+        "Progress journal", "Record a daily milestone and note", "exploreProgress",
+        StampTemplate(
+            StampPreset.FIELD_NOTE, StampColor.BLUE, heading = "Progress journal", layout = StampLayout.LEDGER,
+            size = StampSize.LARGE, position = StampPosition.BOTTOM_RIGHT,
+        ),
+        ExploreCategory.DAILY,
+    ),
+    StarterTemplate(
+        "Hazard report", "Make a safety note easy to spot", "exploreHazard",
+        StampTemplate(
+            StampPreset.FIELD_NOTE, StampColor.COPPER, heading = "Hazard report", layout = StampLayout.PANEL,
+            showStyledNote = true, styledNoteStyle = StampNoteStyle.ALERT,
+        ),
+        ExploreCategory.INSPECTION,
+    ),
+    StarterTemplate(
+        "Condition survey", "Record an inspection and site conditions", "exploreCondition",
+        StampTemplate(
+            StampPreset.SITE_VISIT, StampColor.LILAC, heading = "Condition survey", layout = StampLayout.LEDGER,
+            showWeather = true, showPhotoCode = true,
+        ),
+        ExploreCategory.INSPECTION,
+    ),
+    StarterTemplate(
+        "Equipment audit", "Match an asset to its photo code", "exploreEquipment",
+        StampTemplate(
+            StampPreset.FIELD_NOTE, StampColor.OLIVE, heading = "Equipment audit", layout = StampLayout.PLAIN,
+            showPhotoCode = true, textColor = StampTextColor.MINT,
+        ),
+        ExploreCategory.ASSETS,
+    ),
+    StarterTemplate(
+        "Utility locate", "Show a recorded position and direction", "exploreUtility",
+        StampTemplate(
+            StampPreset.SITE_VISIT, StampColor.BLUE, heading = "Utility locate", layout = StampLayout.LEDGER,
+            showCoordinates = true, showMap = true, showCompass = true,
+        ),
+        ExploreCategory.ASSETS,
+    ),
+    StarterTemplate(
+        "Handover brief", "Include a person and contact for follow-up", "exploreHandover",
+        StampTemplate(
+            StampPreset.COMPLETION, StampColor.JADE, heading = "Handover brief", layout = StampLayout.PANEL,
+            showBusinessCard = true, position = StampPosition.TOP_RIGHT,
+        ),
+        ExploreCategory.HANDOVER,
+    ),
+    StarterTemplate(
+        "Closeout record", "File a finished result with its photo code", "exploreCloseout",
+        StampTemplate(
+            StampPreset.COMPLETION, StampColor.AMBER, heading = "Closeout record", layout = StampLayout.PLAIN,
+            showPhotoCode = true, position = StampPosition.TOP_LEFT,
+        ),
+        ExploreCategory.HANDOVER,
     ),
 )
 

@@ -185,13 +185,16 @@ fun ProjectsScreen(model: WorkPhotoModel, projects: List<Project>) {
 fun ReviewScreen(model: WorkPhotoModel, draft: CaptureDraft, project: Project?) {
     val configured = remember(draft.stampJson) { StampTemplate.fromJson(draft.stampJson) }
     var previewStamp by rememberSaveable(draft.file.absolutePath) { mutableStateOf(configured.preset != null) }
-    var stampLocation by rememberSaveable(draft.file.absolutePath) { mutableStateOf(configured.showCoordinates) }
+    var stampLocation by rememberSaveable(draft.file.absolutePath) { mutableStateOf(configured.usesRecordedLocation) }
     var editStamp by rememberSaveable { mutableStateOf(false) }
     val template = if (configured.preset == null) StampTemplate.DEFAULT_COPY else configured
+    val map = rememberStampMap(editStamp || (previewStamp && stampLocation && template.showMap), draft.location)
     val stamp = stampDetails(
         project?.name ?: "Project", draft.note, draft.takenAtMillis, draft.utcOffsetMinutes,
-        draft.location.takeIf { stampLocation }, template.copy(showCoordinates = stampLocation),
-        logo = rememberStampLogo(template.logoId),
+        draft.location.takeIf { stampLocation }, template,
+        logo = rememberStampLogo(template.logoId.takeIf { template.showLogo }),
+        headingDegrees = draft.headingDegrees,
+        map = map.takeIf { stampLocation },
     )
     Column(Modifier.fillMaxSize().imePadding().padding(horizontal = 18.dp)) {
         Column(
@@ -251,12 +254,12 @@ fun ReviewScreen(model: WorkPhotoModel, draft: CaptureDraft, project: Project?) 
                 }
                 ToggleRow(
                     "Preview job stamp",
-                    "Save original keeps the photo clean. Share a stamped copy after saving.",
+                    "Sitefinch keeps the clean original and saves the selected stamp to Gallery.",
                     previewStamp,
                     { previewStamp = it },
                 )
-                if (previewStamp && draft.location != null) {
-                    ToggleRow("Show coordinates in preview", null, stampLocation, { stampLocation = it })
+                if (previewStamp && draft.location != null && template.usesRecordedLocation) {
+                    ToggleRow("Show recorded location in preview", null, stampLocation, { stampLocation = it })
                 }
             }
         }
@@ -279,7 +282,7 @@ fun ReviewScreen(model: WorkPhotoModel, draft: CaptureDraft, project: Project?) 
             onApply = {
                 model.applyDraftStamp(it)
                 previewStamp = it.preset != null
-                stampLocation = it.showCoordinates
+                stampLocation = it.usesRecordedLocation
                 editStamp = false
             },
             onDismiss = { editStamp = false },
@@ -288,6 +291,8 @@ fun ReviewScreen(model: WorkPhotoModel, draft: CaptureDraft, project: Project?) 
             onDeleteTemplate = model::deleteStamp,
             preview = StampPreview(
                 image, project?.name ?: "Project", draft.note, draft.takenAtMillis, draft.utcOffsetMinutes, draft.location,
+                headingDegrees = draft.headingDegrees, map = map,
+                recordedAddress = configured.recordedAddress,
             ),
         )
     }
@@ -416,12 +421,15 @@ fun PhotoDetailsScreen(model: WorkPhotoModel, photo: Photo, project: Project?) {
     var showStamp by rememberSaveable(photo.id) { mutableStateOf(!photo.isVideo && recordedTemplate.preset != null) }
     val template = remember(copyStampJson) { StampTemplate.fromJson(copyStampJson) }
     val projectName = project?.name ?: "Project"
-    val logo = rememberStampLogo(template.logoId)
+    val logo = rememberStampLogo(template.logoId.takeIf { template.showLogo })
+    val map = rememberStampMap(editStamp || (showStamp && includeLocation && template.showMap), photo.location)
     val stamp = if (showStamp && template.preset != null) {
         stampDetails(
             projectName, photo.note, photo.takenAtMillis, photo.utcOffsetMinutes,
-            photo.location.takeIf { includeLocation }, template.copy(showCoordinates = includeLocation),
+            photo.location.takeIf { includeLocation }, template,
             photoCode = photo.id, logo = logo,
+            headingDegrees = photo.headingDegrees,
+            map = map.takeIf { includeLocation },
         )
     } else null
     val file = model.repository.originalFile(photo)
@@ -469,9 +477,18 @@ fun PhotoDetailsScreen(model: WorkPhotoModel, photo: Photo, project: Project?) {
             Text(if (photo.isVideo) "Share clip" else "Share original", Modifier.padding(start = 8.dp))
         }
         if (!photo.isVideo) {
+            if (model.photoInGallery) {
+                Text("Photo saved to Gallery", style = MaterialTheme.typography.bodyMedium)
+            } else {
+                OutlinedButton(
+                    onClick = { model.savePhotoToGallery(photo, projectName) },
+                    enabled = !model.busy,
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("Save photo to Gallery") }
+            }
             if (template.preset != null) ToggleRow("Include stamp on copy", null, showStamp, { showStamp = it })
-            if (stamp != null && photo.location != null) {
-                ToggleRow("Include GPS coordinates on copy", null, includeLocation, { includeLocation = it })
+            if (stamp != null && photo.location != null && template.usesRecordedLocation) {
+                ToggleRow("Include recorded location on copy", null, includeLocation, { includeLocation = it })
             }
             if (stamp != null || marks.isNotEmpty()) {
                 OutlinedButton(
@@ -488,7 +505,7 @@ fun PhotoDetailsScreen(model: WorkPhotoModel, photo: Photo, project: Project?) {
         StampTemplateSheet(
             if (showStamp) template else StampTemplate(),
             onApply = {
-                copyStampJson = it.toJson()
+                copyStampJson = it.copy(recordedAddress = recordedTemplate.recordedAddress).toJson()
                 showStamp = it.preset != null
                 editStamp = false
             },
@@ -498,6 +515,8 @@ fun PhotoDetailsScreen(model: WorkPhotoModel, photo: Photo, project: Project?) {
             onDeleteTemplate = model::deleteStamp,
             preview = StampPreview(
                 image, projectName, photo.note, photo.takenAtMillis, photo.utcOffsetMinutes, photo.location, photo.id,
+                headingDegrees = photo.headingDegrees, map = map,
+                recordedAddress = recordedTemplate.recordedAddress,
             ),
         )
     }
@@ -530,6 +549,19 @@ internal fun rememberStampLogo(id: String?): android.graphics.Bitmap? {
         value = id to StampLogoStore(context).loadLogo(id)
     }
     return logo.second.takeIf { logo.first == id }
+}
+
+internal val StampTemplate.usesRecordedLocation: Boolean
+    get() = showCoordinates || showMap || showAltitude || (showAddress && recordedAddress.isNotEmpty())
+
+@Composable
+internal fun rememberStampMap(enabled: Boolean, fix: LocationFix?): android.graphics.Bitmap? {
+    if (!enabled || fix == null) return null
+    val context = LocalContext.current
+    val map by produceState<Pair<LocationFix, android.graphics.Bitmap?>?>(null, fix) {
+        value = fix to renderStampMap(context, fix)
+    }
+    return map?.takeIf { it.first == fix }?.second
 }
 
 @Composable
@@ -607,7 +639,7 @@ private fun displayLocation(location: LocationFix): String =
     location.precision.replaceFirstChar(Char::uppercase) + " location · " + displayPosition(location)
 
 @Composable
-private fun ToggleRow(title: String, detail: String?, enabled: Boolean, onChange: (Boolean) -> Unit) {
+internal fun ToggleRow(title: String, detail: String?, enabled: Boolean, onChange: (Boolean) -> Unit) {
     Row(
         Modifier.fillMaxWidth().heightIn(min = 54.dp).toggleable(value = enabled, role = Role.Switch, onValueChange = onChange),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -626,7 +658,7 @@ private fun ToggleRow(title: String, detail: String?, enabled: Boolean, onChange
 private data class PhotoPreview(val image: ImageBitmap? = null, val unavailable: Boolean = false)
 
 @Composable
-private fun PhotoImage(
+internal fun PhotoImage(
     file: File,
     description: String?,
     modifier: Modifier,

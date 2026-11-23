@@ -1,0 +1,12 @@
+Made with Natural Earth. The 1:50m public-domain land polygons and international land boundary lines are included for offline regional locators.
+Public domain terms: https://www.naturalearthdata.com/about/terms-of-use/
+
+Source snapshot: Natural Earth Vector v5.1.2, f1890d9f152c896d250a77557a5751a93d494776.
+- https://raw.githubusercontent.com/nvkelso/natural-earth-vector/f1890d9f152c896d250a77557a5751a93d494776/geojson/ne_50m_land.geojson
+  SHA-256 e874b27a51d146452be360cafb3cc50c86001074a67d534113e6534682f9826b
+- https://raw.githubusercontent.com/nvkelso/natural-earth-vector/f1890d9f152c896d250a77557a5751a93d494776/geojson/ne_50m_admin_0_boundary_lines_land.geojson
+  SHA-256 2faac4f6b34386f3d21b6e018cf151f241f00e5c936d44dd17d7d9bfb147fa48
+
+The GeoJSON geometry was simplified using Douglas–Peucker with a tolerance of 0.025 degrees, then rounded to 0.01 degrees. Consecutive duplicate points and shapes collapsed by simplification were omitted. The app uses only the geometry.
+
+The binary starts with ASCII SFM1 and a big-endian unsigned 16-bit shape count. Each shape has a one-byte closed flag and a big-endian unsigned 16-bit path count. Each path has a big-endian unsigned 16-bit point count followed by big-endian signed 16-bit longitude and latitude pairs in hundredths of a degree. Land polygons store the outer path followed by any holes. Paths for polygons are implicitly closed.

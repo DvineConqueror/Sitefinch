@@ -55,6 +55,7 @@ class PhotoRepositoryTest {
                 assertEquals("Before upgrade", photo.note)
                 assertEquals(digest, photo.sha256)
                 assertNull(photo.stampJson)
+                assertNull(photo.headingDegrees)
                 assertFalse(photo.isVideo)
             } finally {
                 database.close()
@@ -104,13 +105,15 @@ class PhotoRepositoryTest {
             saveAttributes()
         }
         val bytes = staged.readBytes()
-        val fix = LocationFix(14.0, 121.0, 500.0, 200L, "approximate")
+        val fix = LocationFix(14.0, 121.0, 5.0, 200L, "precise", altitudeMeters = 82.0)
         val photo = repository.saveCapture(
-            CaptureDraft(staged, project.id, 1_700_000_000_000, 480, "Site checked", fix),
+            CaptureDraft(staged, project.id, 1_700_000_000_000, 480, "Site checked", fix, headingDegrees = 185f),
         )
 
         val reopened = PhotoRepository(context)
         assertEquals(photo, withTimeout(5_000) { reopened.photos(project.id).first() }.single())
+        assertEquals(fix, photo.location)
+        assertEquals(185f, photo.headingDegrees)
         val original = reopened.originalFile(photo)
         assertFalse(staged.exists())
         assertArrayEquals(bytes, original.readBytes())

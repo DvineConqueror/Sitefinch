@@ -3,9 +3,14 @@ package app.workphotolog.android
 import android.content.ContentResolver
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.graphics.ImageDecoder
+import android.graphics.Paint
+import android.graphics.Path
 import android.graphics.Rect
+import android.graphics.RectF
 import android.net.Uri
+import androidx.core.graphics.withSave
 import java.io.File
 import java.io.IOException
 import java.util.UUID
@@ -74,7 +79,7 @@ class StampLogoStore(context: Context) {
     suspend fun loadLogo(id: String?): Bitmap? = withContext(Dispatchers.IO) { loadForRender(id) }
 
     internal fun loadForRender(id: String?): Bitmap? {
-        if (id == null || !LOGO_ID.matches(id)) return null
+        if (id == null || !validStampLogoId(id)) return null
         val file = File(directory, "$id.png")
         if (!file.isFile) return null
         return try {
@@ -88,7 +93,6 @@ class StampLogoStore(context: Context) {
         const val MAX_SOURCE_BYTES = 24L * 1024 * 1024
         const val MAX_SOURCE_PIXELS = 100_000_000
         const val MAX_LOGO_EDGE = 640
-        val LOGO_ID = Regex("[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}")
     }
 }
 
@@ -97,4 +101,35 @@ fun stampLogoSource(bitmap: Bitmap, zoom: Float): Rect {
     val left = (bitmap.width - edge) / 2
     val top = (bitmap.height - edge) / 2
     return Rect(left, top, left + edge, top + edge)
+}
+
+internal fun validStampLogoId(id: String): Boolean = STAMP_LOGO_ID.matches(id)
+
+private val STAMP_LOGO_ID = Regex("[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}")
+
+fun drawStampLogo(
+    canvas: Canvas,
+    logo: Bitmap,
+    zoom: Float,
+    shape: StampLogoShape,
+    destination: RectF,
+    paint: Paint,
+) {
+    if (logo.isRecycled || destination.isEmpty) return
+    val source = stampLogoSource(logo, zoom)
+    if (shape == StampLogoShape.SQUARE) {
+        canvas.drawBitmap(logo, source, destination, paint)
+        return
+    }
+    val clip = Path()
+    if (shape == StampLogoShape.CIRCLE) {
+        clip.addOval(destination, Path.Direction.CW)
+    } else {
+        val radius = minOf(destination.width(), destination.height()) * 0.22f
+        clip.addRoundRect(destination, radius, radius, Path.Direction.CW)
+    }
+    canvas.withSave {
+        clipPath(clip)
+        drawBitmap(logo, source, destination, paint)
+    }
 }

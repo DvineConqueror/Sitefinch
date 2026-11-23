@@ -4,9 +4,9 @@
 
 Keep the viewfinder central, framed by warm paper and dark camera controls. Project and location sit above it. A recent capture gives the Album button a useful visual cue. Templates and the shutter stay within reach, with Photo and Video below. Camera tools have high-contrast surfaces over the scene. Android handles the template sheet’s drag and Back behavior.
 
-The template tray pairs searchable job presets with a personal style library. The editor keeps a scene preview above Details, Style, and Logo controls. Four stamp layouts use the same renderer for previews, JPEG copies, and video. Clean photo is the default.
+The template tray pairs searchable job presets with a personal style library. The editor keeps a scene preview above Details, Style, and Logo controls. Style keeps the preview in view where space permits and outlines the selected group for dragging, with arrows for precise moves. Layout, backdrop, typography, colors, and placement use the same renderer for previews, JPEG copies, and video. Clean photo is the default.
 
-Review leads with the capture and pins Save in reach. Photos keep a clean original, with stamp and markup edits available on a separate copy. Video records the selected stamp. Sound and coordinates have explicit controls. The workspace shows the local project count and uses Pip, the original camera-eyed finch, as a small accent. The Android launcher uses Pip’s head on a pale field with an adaptive mask.
+A photo shutter press saves the clean original to the project. The selected stamp goes onto a separate Gallery image. The post-capture sheet previews that image and keeps Share and Photo details in reach. Swipe the sheet away to resume capture. Video retains its review screen and records the selected stamp. Sound and coordinates have explicit controls. The workspace shows the local project count and uses Pip, the original camera-eyed finch, as a small accent.
 
 ## Material and type
 

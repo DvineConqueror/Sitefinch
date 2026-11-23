@@ -1,0 +1,157 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 3,
+    "identityHash": "112c558e42a5f170c46cfaeb095752dc",
+    "entities": [
+      {
+        "tableName": "projects",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `name` TEXT NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "photos",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `projectId` TEXT NOT NULL, `takenAtMillis` INTEGER NOT NULL, `utcOffsetMinutes` INTEGER NOT NULL, `note` TEXT NOT NULL, `sha256` TEXT NOT NULL, `stampJson` TEXT, `isVideo` INTEGER NOT NULL DEFAULT 0, `headingDegrees` REAL, `location_latitude` REAL, `location_longitude` REAL, `location_accuracyMeters` REAL, `location_ageMillis` INTEGER, `location_precision` TEXT, `location_altitudeMeters` REAL, PRIMARY KEY(`id`), FOREIGN KEY(`projectId`) REFERENCES `projects`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "projectId",
+            "columnName": "projectId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "takenAtMillis",
+            "columnName": "takenAtMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "utcOffsetMinutes",
+            "columnName": "utcOffsetMinutes",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "note",
+            "columnName": "note",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sha256",
+            "columnName": "sha256",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "stampJson",
+            "columnName": "stampJson",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "isVideo",
+            "columnName": "isVideo",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "headingDegrees",
+            "columnName": "headingDegrees",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "location.latitude",
+            "columnName": "location_latitude",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "location.longitude",
+            "columnName": "location_longitude",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "location.accuracyMeters",
+            "columnName": "location_accuracyMeters",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "location.ageMillis",
+            "columnName": "location_ageMillis",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "location.precision",
+            "columnName": "location_precision",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "location.altitudeMeters",
+            "columnName": "location_altitudeMeters",
+            "affinity": "REAL"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_photos_projectId_takenAtMillis",
+            "unique": false,
+            "columnNames": [
+              "projectId",
+              "takenAtMillis"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_photos_projectId_takenAtMillis` ON `${TABLE_NAME}` (`projectId`, `takenAtMillis`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "projects",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "projectId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '112c558e42a5f170c46cfaeb095752dc')"
+    ]
+  }
+}

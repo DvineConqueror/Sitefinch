@@ -54,6 +54,7 @@ import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.LocationOff
 import androidx.compose.material.icons.outlined.LocationOn
 import androidx.compose.material.icons.outlined.EditNote
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -176,6 +177,7 @@ private fun WorkPhotoApp(model: WorkPhotoModel = viewModel()) {
     val projects by model.projects.collectAsStateWithLifecycle()
     val currentProject = projects.firstOrNull { it.id == model.selectedProjectId } ?: projects.firstOrNull()
     val snackbar = remember { SnackbarHostState() }
+    var showPhotoSettings by rememberSaveable { mutableStateOf(false) }
 
     BackHandler(enabled = model.page != Page.CAMERA || model.captureLocked) {
         if (model.page == Page.CAMERA) model.stopVideo() else model.back()
@@ -224,6 +226,13 @@ private fun WorkPhotoApp(model: WorkPhotoModel = viewModel()) {
                         }
                     }
                 },
+                actions = {
+                    if (model.page == Page.CAMERA) {
+                        IconButton(onClick = { showPhotoSettings = true }, enabled = !model.captureLocked) {
+                            Icon(Icons.Outlined.Settings, "Photo settings")
+                        }
+                    }
+                },
             )
         },
     ) { insets ->
@@ -236,6 +245,25 @@ private fun WorkPhotoApp(model: WorkPhotoModel = viewModel()) {
                 Page.PHOTO -> model.activePhoto?.let { PhotoDetailsScreen(model, it, currentProject) }
             }
         }
+    }
+
+    model.quickPhoto?.let { capture ->
+        QuickPhotoSheet(capture, model::shareQuickPhoto, model::openQuickPhotoDetails, model::dismissQuickPhoto)
+    }
+    if (showPhotoSettings) {
+        AlertDialog(
+            onDismissRequest = { showPhotoSettings = false },
+            title = { Text("Photo settings") },
+            text = {
+                ToggleRow(
+                    "Save photos to Gallery automatically",
+                    "Saves the photo with its selected stamp. Clean photo saves the original.",
+                    model.autoSaveToGallery,
+                    model::updateAutoSaveToGallery,
+                )
+            },
+            confirmButton = { TextButton(onClick = { showPhotoSettings = false }) { Text("Done") } },
+        )
     }
 
     if (model.showDiscard) {
@@ -278,6 +306,35 @@ private fun CameraPage(model: WorkPhotoModel, project: Project?) {
     var bindFailed by remember { mutableStateOf(false) }
     var retry by remember { mutableIntStateOf(0) }
     val activeLocation = model.useLocation && locationGranted
+    val template = model.stampTemplate
+    val lensFacing = session?.camera?.cameraInfo?.lensFacing
+    val heading = rememberCaptureHeading(
+        cameraGranted && (template.showCompass || showTemplates),
+        frontFacing = lensFacing?.let { it == CameraSelector.LENS_FACING_FRONT } ?: frontFacing,
+    )
+    val needsAddress = activeLocation && (showTemplates || showAddress || (template.preset != null && template.showAddress))
+    val showLocationPreview = activeLocation && (template.usesRecordedLocation || showTemplates || needsAddress)
+    val viewfinderFix by produceState<LocationFix?>(null, showLocationPreview) {
+        value = null
+        while (showLocationPreview) {
+            value = currentFix(activity)
+            delay(30_000)
+        }
+    }
+    val previewFix = viewfinderFix.takeIf { showLocationPreview }
+    val addressFix = previewFix.takeIf { needsAddress }
+    val automaticAddress by produceState<Map<AddressPart, String>>(
+        emptyMap(), addressFix?.latitude, addressFix?.longitude, addressFix?.precision,
+    ) {
+        value = emptyMap()
+        value = resolveStampAddress(activity, addressFix)
+        while (addressFix != null && value.isEmpty()) {
+            delay(30_000)
+            value = resolveStampAddress(activity, addressFix)
+        }
+    }
+    val previewAddress = automaticAddress.takeIf { addressFix != null }.orEmpty()
+    val previewMap = rememberStampMap(template.showMap || showTemplates, previewFix)
     val cameraRequest = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
         cameraGranted = it
     }
@@ -367,7 +424,11 @@ private fun CameraPage(model: WorkPhotoModel, project: Project?) {
                 val bound = session
                 if (bound != null) {
                     if (project != null && model.stampTemplate.preset != null) {
-                        LiveStamp(project.name, model.stampTemplate, model.nextCaptureNote, Modifier.matchParentSize())
+                        LiveStamp(
+                            project.name, template.copy(recordedAddress = previewAddress), model.nextCaptureNote,
+                            previewFix, heading, previewMap,
+                            Modifier.matchParentSize(),
+                        )
                     }
                     Row(
                         Modifier.align(Alignment.TopEnd).padding(8.dp),
@@ -521,8 +582,8 @@ private fun CameraPage(model: WorkPhotoModel, project: Project?) {
                     val bound = session
                     when {
                         status != null -> model.stopVideo()
-                        bound?.video != null -> model.startVideo(bound.video, recordAudio)
-                        bound?.image != null -> model.capture(bound.image)
+                        bound?.video != null -> model.startVideo(bound.video, recordAudio, heading)
+                        bound?.image != null -> model.capture(bound.image, heading)
                     }
                 },
                 enabled = ready || (status != null && !model.recordingFinishing),
@@ -612,6 +673,10 @@ private fun CameraPage(model: WorkPhotoModel, project: Project?) {
                     note = model.nextCaptureNote,
                     time = instant.toEpochMilli(),
                     offset = ZoneId.systemDefault().rules.getOffset(instant).totalSeconds / 60,
+                    location = previewFix,
+                    headingDegrees = heading,
+                    map = previewMap,
+                    recordedAddress = previewAddress,
                 )
             },
         )
@@ -625,6 +690,8 @@ private fun CameraPage(model: WorkPhotoModel, project: Project?) {
     if (showAddress) {
         CaptureAddressDialog(
             address = model.stampTemplate.address,
+            automaticAddress = template.copy(address = "", showAddress = true, recordedAddress = previewAddress)
+                .displayAddress(includeRecorded = true),
             gpsEnabled = activeLocation,
             onToggleGps = {
                 when {
@@ -689,17 +756,28 @@ private fun CameraPage(model: WorkPhotoModel, project: Project?) {
 }
 
 @Composable
-private fun LiveStamp(project: String, template: StampTemplate, note: String, modifier: Modifier) {
-    val logo = rememberStampLogo(template.logoId)
+private fun LiveStamp(
+    project: String,
+    template: StampTemplate,
+    note: String,
+    location: LocationFix?,
+    heading: Float?,
+    map: Bitmap?,
+    modifier: Modifier,
+) {
+    val logo = rememberStampLogo(template.logoId.takeIf { template.showLogo })
     val instant by produceState(Instant.now()) {
         while (true) {
             value = Instant.now()
             delay(60_000L - value.toEpochMilli() % 60_000L)
         }
     }
-    val details = remember(project, template, note, instant, logo) {
+    val details = remember(project, template, note, instant, logo, location, heading, map) {
         val offset = ZoneId.systemDefault().rules.getOffset(instant).totalSeconds / 60
-        stampDetails(project, note, instant.toEpochMilli(), offset, null, template, logo = logo)
+        stampDetails(
+            project, note, instant.toEpochMilli(), offset, location, template,
+            logo = logo, headingDegrees = heading, map = map,
+        )
     }
     Canvas(modifier) {
         drawIntoCanvas { canvas -> drawStamp(canvas.nativeCanvas, size.width.toInt(), size.height.toInt(), details) }

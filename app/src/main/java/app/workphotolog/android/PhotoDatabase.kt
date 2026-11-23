@@ -22,6 +22,7 @@ data class LocationFix(
     val accuracyMeters: Double,
     val ageMillis: Long,
     val precision: String,
+    val altitudeMeters: Double? = null,
 )
 
 data class CaptureDraft(
@@ -33,6 +34,7 @@ data class CaptureDraft(
     val location: LocationFix?,
     val stampJson: String? = null,
     val isVideo: Boolean = false,
+    val headingDegrees: Float? = null,
 )
 
 @Entity(tableName = "photos", foreignKeys = [
@@ -53,6 +55,7 @@ data class Photo(
     val sha256: String,
     val stampJson: String? = null,
     @ColumnInfo(defaultValue = "0") val isVideo: Boolean = false,
+    val headingDegrees: Float? = null,
 )
 
 @Entity(tableName = "projects")
@@ -92,9 +95,9 @@ internal interface PhotoDao {
 
 @Database(
     entities = [ProjectRow::class, Photo::class],
-    version = 2,
+    version = 3,
     exportSchema = true,
-    autoMigrations = [AutoMigration(from = 1, to = 2)],
+    autoMigrations = [AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3)],
 )
 internal abstract class PhotoDatabase : RoomDatabase() {
     abstract fun photoDao(): PhotoDao

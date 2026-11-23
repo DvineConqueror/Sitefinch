@@ -8,6 +8,7 @@ import android.media.MediaMetadataRetriever
 import android.os.ParcelFileDescriptor
 import android.os.SystemClock
 import android.view.accessibility.AccessibilityNodeInfo
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasTestTag
@@ -19,16 +20,19 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
-import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTouchInput
 import androidx.exifinterface.media.ExifInterface
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.rule.GrantPermissionRule
 import java.io.File
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import org.junit.Assert.assertArrayEquals
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -90,13 +94,17 @@ class MainActivitySmokeTest {
         val name = "Camera capture " + SystemClock.elapsedRealtime()
         compose.onNodeWithTag("projectPicker").performClick()
         createProject(name)
+        compose.onNodeWithTag("templates").performClick()
+        compose.onNodeWithTag("templateClean").performScrollTo().performClick()
+        compose.onNodeWithTag("applyTemplate").performClick()
         waitForShutter()
         compose.onNodeWithTag("shutter").performClick()
-        waitForText("Review photo", 25_000)
-        val preview = hasContentDescription("Photo awaiting review")
+        waitForText("Clean photo saved to Gallery", 25_000)
+        val preview = hasContentDescription("Clean photo preview")
         compose.waitUntil(10_000) { compose.onAllNodes(preview).fetchSemanticsNodes().isNotEmpty() }
-        captureScreenshot("smoke-review.png")
-        compose.onNodeWithTag("saveOriginal").assertIsDisplayed().performClick()
+        compose.onNodeWithTag("shareQuickPhoto").assertIsDisplayed()
+        captureScreenshot("smoke-quick-photo.png")
+        compose.onNodeWithText("Photo details").performClick()
         waitForText("Photo details")
 
         val context = InstrumentationRegistry.getInstrumentation().targetContext
@@ -108,6 +116,22 @@ class MainActivitySmokeTest {
             val jpeg = repository.originalFile(photo)
             assertTrue(jpeg.length() > 2)
             assertTrue(repository.checkOriginal(photo))
+            val gallery = GalleryPhotos(context)
+            val galleryUri = withTimeout(10_000) {
+                var item = gallery.find(photo)
+                while (item == null) {
+                    delay(50)
+                    item = gallery.find(photo)
+                }
+                item
+            }
+            try {
+                val galleryBytes = checkNotNull(context.contentResolver.openInputStream(galleryUri)).use { it.readBytes() }
+                assertArrayEquals(jpeg.readBytes(), galleryBytes)
+                assertEquals(galleryUri, gallery.publish(photo, jpeg))
+            } finally {
+                context.contentResolver.delete(galleryUri, null, null)
+            }
             assertNull(photo.location)
             assertNull(ExifInterface(jpeg).latLong)
             val bitmap = decodeJpeg(jpeg, 320)
@@ -116,6 +140,56 @@ class MainActivitySmokeTest {
             } finally {
                 bitmap.recycle()
             }
+        }
+    }
+
+    @Test
+    fun shutterSavesSelectedStampToGalleryAndOffersImmediateSharing() {
+        val name = "Stamped Gallery " + SystemClock.elapsedRealtime()
+        compose.onNodeWithTag("projectPicker").performClick()
+        createProject(name)
+        compose.onNodeWithTag("templates").performClick()
+        compose.onNodeWithTag("templateClock").performScrollTo().performClick()
+        compose.onNodeWithTag("applyTemplate").performClick()
+        try {
+            waitForShutter()
+            compose.onNodeWithTag("shutter").performClick()
+            waitForText("Stamped copy saved to Gallery", 25_000)
+            val preview = hasContentDescription("Stamped photo preview")
+            compose.waitUntil(10_000) { compose.onAllNodes(preview).fetchSemanticsNodes().isNotEmpty() }
+            compose.onNodeWithTag("shareQuickPhoto").assertIsDisplayed()
+            captureScreenshot("smoke-quick-stamped.png")
+
+            val context = InstrumentationRegistry.getInstrumentation().targetContext
+            val repository = PhotoRepository(context)
+            runBlocking {
+                val project = withTimeout(10_000) { repository.projects.first { it.any { row -> row.name == name } } }
+                    .single { it.name == name }
+                val photo = withTimeout(10_000) { repository.photos(project.id).first { it.isNotEmpty() } }.single()
+                val original = repository.originalFile(photo)
+                val template = StampTemplate.fromJson(photo.stampJson)
+                assertEquals(StampLayout.CLOCK, template.layout)
+                val gallery = GalleryPhotos(context)
+                val uri = checkNotNull(gallery.find(photo, stamped = true))
+                val expected = createStampedCopy(context, original, stampDetails(
+                    name, photo.note, photo.takenAtMillis, photo.utcOffsetMinutes, photo.location, template, photoCode = photo.id,
+                ))
+                try {
+                    val galleryBytes = checkNotNull(context.contentResolver.openInputStream(uri)).use { it.readBytes() }
+                    assertArrayEquals(expected.readBytes(), galleryBytes)
+                    assertTrue(!original.readBytes().contentEquals(galleryBytes))
+                    assertNull(gallery.find(photo))
+                    assertTrue(repository.checkOriginal(photo))
+                } finally {
+                    expected.delete()
+                    context.contentResolver.delete(uri, null, null)
+                }
+            }
+        } finally {
+            compose.onNodeWithContentDescription("Dismiss photo preview").performClick()
+            compose.onNodeWithTag("templates").performClick()
+            compose.onNodeWithTag("templateClean").performScrollTo().performClick()
+            compose.onNodeWithTag("applyTemplate").performClick()
         }
     }
 
@@ -216,14 +290,25 @@ class MainActivitySmokeTest {
     @Test
     fun customStampCanBeSavedAndReused() {
         val name = "Survey " + SystemClock.elapsedRealtime()
-        val heading = "Concrete pour"
         compose.onNodeWithTag("templates").performClick()
         compose.onNodeWithTag("templateClock").performScrollTo().performClick()
         compose.onNodeWithTag("editTemplate").performClick()
-        compose.onNodeWithTag("stampHeading").performScrollTo().performTextClearance()
-        compose.onNodeWithTag("stampHeading").performTextInput(heading)
-        compose.onNodeWithTag("stampEditorSTYLE").performScrollTo().performClick()
+        compose.onNodeWithTag("stampShowTitle").performClick()
+        compose.onNodeWithTag("stampEditorSTYLE").performClick()
+        compose.onNodeWithTag("stampLayoutPLAIN").performScrollTo().performClick()
+        compose.onNodeWithTag("stampBackgroundNONE").performScrollTo().performClick()
+        compose.onNodeWithTag("stampLargeClock").performScrollTo().performClick()
+        compose.onNodeWithTag("stampTypographySERIF").performScrollTo().performClick()
         compose.onNodeWithTag("stampSizeLARGE").performScrollTo().performClick()
+        for (startX in listOf(0.17f, 0.37f, 0.46f)) {
+            compose.onNodeWithTag("stampDragCanvas").performTouchInput {
+                down(Offset(width * startX, height * 0.85f))
+                moveBy(Offset(0f, -height * 0.13f))
+                moveBy(Offset(0f, -height * 0.20f))
+                up()
+            }
+        }
+        captureScreenshot("smoke-stamp-customization.png")
         compose.onNodeWithTag("saveTemplateStyle").performClick()
         compose.onNodeWithTag("styleName").performTextInput(name)
         compose.onNodeWithText("Save", ignoreCase = false).performClick()
@@ -233,13 +318,23 @@ class MainActivitySmokeTest {
         val preferences = context.getSharedPreferences("camera", android.content.Context.MODE_PRIVATE)
         val library = org.json.JSONObject(checkNotNull(preferences.getString("stamp_library", null)))
         val saved = StampTemplate.fromJson(library.getString(name))
-        assertTrue(saved.heading == heading && saved.layout == StampLayout.CLOCK && saved.size == StampSize.LARGE)
+        assertEquals("Time & place", saved.heading)
+        assertEquals(StampLayout.PLAIN, saved.layout)
+        assertEquals(StampBackground.NONE, saved.background)
+        assertEquals(StampSize.LARGE, saved.size)
+        assertEquals(StampTypography.SERIF, saved.typography)
+        assertTrue(saved.usesLargeClock)
+        assertTrue(saved.stampOffset.y < -0.10f)
+        assertTrue(!saved.showTitle)
 
         compose.onNodeWithTag("templates").performClick()
         compose.onNodeWithTag("savedStyles").performClick()
         compose.onNodeWithText(name).performScrollTo().assertIsDisplayed()
         compose.onNodeWithContentDescription("Delete " + name).performScrollTo().performClick()
         compose.onNodeWithText("Delete style").performClick()
+        compose.onNodeWithTag("exploreStyles").performClick()
+        compose.onNodeWithTag("exploreCategoryINSPECTION").performScrollTo().performClick()
+        compose.onNodeWithTag("exploreHazard").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Presets").performClick()
         compose.onNodeWithTag("templateClean").performScrollTo().performClick()
         compose.onNodeWithTag("applyTemplate").performClick()

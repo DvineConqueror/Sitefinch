@@ -5,12 +5,14 @@ Android camera for documenting work by project. Capture photos and clips offline
 ## Use the app
 
 1. Open Camera, choose a project, and select Photo or Video.
-2. Open Templates and select a preset or Clean photo. Customize the layout, size, text and accent colors, position, and detail fields. Use Logo to import a company logo and adjust its placement and crop. Save style adds it to your reusable library. Apply sets the stamp for capture or review.
-3. The camera location button opens the address editor and optional GPS controls. Enter an address manually or use Android’s address lookup when available. The note button adds a note to the next capture.
-4. Review and save. Photos retain their original JPEG and remember the chosen template. Photo details can share the original or a separate copy with a stamp, text, arrows, boxes, or pen marks. Copy edits stay in that preview unless you share them. An address written on the stamp is visible in the copy independently of the GPS coordinates switch.
+2. Open Templates and select a preset or Clean photo. Explore more templates by job category. In Customize, switch individual stamp fields on or off and add a business card or styled note. In Style, pick the layout, background opacity, typeface, and text and clock sizes. Drag the stamp, logo, clock, or details on the preview, or use the move buttons. In Logo, import an image and choose its shape and crop. The Style controls let you apply colors from that image to the background, accents, and text. Save style adds it to your reusable library.
+3. Turn on Location to fill the stamp address through Android’s address lookup. In **Customize → Details → Address**, choose which parts appear. Municipality/city and province/county are selected by default. Enter an optional manual address for captures with Location off or when lookup is unavailable. The note button adds a note to the next capture.
+4. Tap the photo shutter. Sitefinch keeps the original JPEG in the project and automatically saves a stamped copy to Android Gallery under `Pictures/Sitefinch`. The Clean photo template saves the original JPEG to Gallery. Use **Share** on the capture preview to share the same photo, or dismiss the preview to keep shooting. Turn off Gallery saving in Photo settings. Photo details can still share the original or make a copy with stamps or markup.
 5. Video renders the chosen stamp while recording. Enable the microphone when you want audio. Project ZIPs include original JPEGs and a manifest, with optional GPS metadata. Share clips individually.
 
 Every stamp control is available without a subscription. Media carries no Sitefinch watermark. Records and saved styles live on this device. Share ZIPs you need to keep outside the app before clearing app data or uninstalling.
+
+Map, coordinates, and altitude use the recorded location when available. The map is an offline regional locator. Compass uses the device’s magnetic heading. Weather is entered manually.
 
 ## Build and check
 

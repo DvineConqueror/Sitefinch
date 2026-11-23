@@ -55,6 +55,7 @@ internal fun CaptureNoteDialog(note: String, onSave: (String) -> Unit, onDismiss
 @Composable
 internal fun CaptureAddressDialog(
     address: String,
+    automaticAddress: String,
     gpsEnabled: Boolean,
     onToggleGps: () -> Unit,
     onSave: (String) -> Unit,
@@ -74,7 +75,9 @@ internal fun CaptureAddressDialog(
             try {
                 val found = withTimeoutOrNull(8_000) {
                     val fix = if (query == null) currentFix(context) else null
-                    findAddresses(context, query, fix)
+                    findAddresses(context, query, fix).mapNotNull {
+                        it.takeIf { candidate -> candidate.maxAddressLineIndex >= 0 }?.getAddressLine(0)
+                    }.filter(String::isNotBlank).distinct()
                 }.orEmpty()
                 matches = found
                 if (found.isEmpty()) result = "No address found. Enter it manually."
@@ -93,10 +96,11 @@ internal fun CaptureAddressDialog(
             ) {
                 TextButton(onClick = onToggleGps) { Text(if (gpsEnabled) "Turn GPS off" else "Turn GPS on") }
                 OutlinedTextField(
-                    value, { value = it.take(140) }, label = { Text("Stamp address") },
+                    value, { value = it.take(140) }, label = { Text("Manual address (optional)") },
                     modifier = Modifier.fillMaxWidth(), maxLines = 2,
                 )
-                Text("Enter the job address, search by name, or use the device’s location to find nearby addresses.",
+                Text(if (gpsEnabled && automaticAddress.isNotBlank()) "Automatic address · $automaticAddress"
+                    else "Sitefinch fills the stamp address when GPS and an address lookup are available.",
                     style = MaterialTheme.typography.bodySmall)
                 TextButton(
                     enabled = gpsEnabled && !lookingUp,
@@ -121,10 +125,10 @@ internal fun CaptureAddressDialog(
     )
 }
 
-private suspend fun findAddresses(context: Context, query: String?, fix: LocationFix?): List<String> {
+internal suspend fun findAddresses(context: Context, query: String?, fix: LocationFix?): List<Address> {
     if (!Geocoder.isPresent() || (query == null && fix == null)) return emptyList()
     val geocoder = Geocoder(context)
-    val matches = try {
+    return try {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             suspendCancellableCoroutine { continuation ->
                 val listener = object : Geocoder.GeocodeListener {
@@ -152,7 +156,7 @@ private suspend fun findAddresses(context: Context, query: String?, fix: Locatio
         emptyList()
     } catch (_: IllegalArgumentException) {
         emptyList()
+    } catch (_: SecurityException) {
+        emptyList()
     }
-    return matches.mapNotNull { it.takeIf { address -> address.maxAddressLineIndex >= 0 }?.getAddressLine(0) }
-        .filter(String::isNotBlank).distinct()
 }
