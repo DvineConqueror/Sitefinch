@@ -186,10 +186,16 @@ class MainActivitySmokeTest {
                 }
             }
         } finally {
-            compose.onNodeWithContentDescription("Dismiss photo preview").performClick()
-            compose.onNodeWithTag("templates").performClick()
-            compose.onNodeWithTag("templateClean").performScrollTo().performClick()
-            compose.onNodeWithTag("applyTemplate").performClick()
+            val dismissPreview = hasContentDescription("Dismiss photo preview")
+            if (compose.onAllNodes(dismissPreview).fetchSemanticsNodes().isNotEmpty()) {
+                compose.onNode(dismissPreview).performClick()
+            }
+            val templates = hasTestTag("templates") and isEnabled()
+            if (compose.onAllNodes(templates).fetchSemanticsNodes().isNotEmpty()) {
+                compose.onNodeWithTag("templates").performClick()
+                compose.onNodeWithTag("templateClean").performScrollTo().performClick()
+                compose.onNodeWithTag("applyTemplate").performClick()
+            }
         }
     }
 
