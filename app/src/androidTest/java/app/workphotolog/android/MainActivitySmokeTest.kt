@@ -353,6 +353,29 @@ class MainActivitySmokeTest {
         compose.onNodeWithTag("applyTemplate").performClick()
     }
 
+    @Test
+    fun exploreFiltersAndAppliesAReadyMadeTemplate() {
+        compose.onNodeWithTag("templates").performClick()
+        compose.onNodeWithTag("exploreStyles").performClick()
+        compose.onNodeWithTag("exploreCategoryRETAIL").performScrollTo().performClick()
+        compose.onNodeWithTag("exploreShelfAudit").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("exploreParcel").assertDoesNotExist()
+        compose.onNodeWithTag("exploreCategorySHIPPING").performScrollTo().performClick()
+        compose.onNodeWithTag("exploreParcel").performScrollTo().performClick()
+        compose.onNodeWithTag("applyTemplate").performClick()
+        try {
+            val context = InstrumentationRegistry.getInstrumentation().targetContext
+            val preferences = context.getSharedPreferences("camera", android.content.Context.MODE_PRIVATE)
+            val applied = StampTemplate.fromJson(preferences.getString("stamp_template", null))
+            assertEquals("Parcel delivery", applied.heading)
+            assertTrue(applied.showPhotoCode)
+        } finally {
+            compose.onNodeWithTag("templates").performClick()
+            compose.onNodeWithTag("templateClean").performScrollTo().performClick()
+            compose.onNodeWithTag("applyTemplate").performClick()
+        }
+    }
+
     private fun createProject(name: String) {
         compose.onNodeWithText("New project").performClick()
         compose.onNodeWithTag("newProjectName").performTextInput(name)

@@ -10,6 +10,8 @@ Android camera for documenting work by project. Capture photos and clips offline
 4. Tap the photo shutter. Sitefinch keeps the original JPEG in the project and automatically saves a stamped copy to Android Gallery under `Pictures/Sitefinch`. The Clean photo template saves the original JPEG to Gallery. Use **Share** on the capture preview to share the same photo, or dismiss the preview to keep shooting. Turn off Gallery saving in Photo settings. Photo details can still share the original or make a copy with stamps or markup.
 5. Video renders the chosen stamp while recording. Enable the microphone when you want audio. Project ZIPs include original JPEGs and a manifest, with optional GPS metadata. Share clips individually.
 
+**Templates → Explore** includes offline starting points for shipping, attendance, security, inspection, retail, and other field work. Pick a template to use as-is or customize it before applying.
+
 Every stamp control is available without a subscription. Media carries no Sitefinch watermark. Records and saved styles live on this device. Open **Sitefinch settings → Library backup** to create a ZIP in a folder you choose. Restore merges its projects, originals, and saved styles into the current library. Keep a copy outside the device if you need to recover after losing it. The ZIP includes recorded location and is unencrypted.
 
 Map, coordinates, and altitude use the recorded location when available. The map is an offline regional locator. Compass uses the device’s magnetic heading. Weather is entered manually.

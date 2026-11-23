@@ -73,6 +73,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface as MaterialSurface
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -102,6 +103,8 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -299,6 +302,7 @@ private fun CameraPage(model: WorkPhotoModel, project: Project?) {
     var bindFailed by remember { mutableStateOf(false) }
     var retry by remember { mutableIntStateOf(0) }
     val activeLocation = model.useLocation && locationGranted && deviceLocationEnabled
+    val showLocationWarning = locationGranted && !deviceLocationEnabled
     val template = model.stampTemplate
     val lensFacing = session?.camera?.cameraInfo?.lensFacing
     val heading = rememberCaptureHeading(
@@ -429,12 +433,35 @@ private fun CameraPage(model: WorkPhotoModel, project: Project?) {
                     when {
                         activeLocation && previewFix == null -> "Finding location…"
                         activeLocation -> "Location on"
-                        model.useLocation && locationGranted -> "Device location off"
                         else -> "Location off"
                     },
                     Modifier.padding(start = 6.dp),
                     maxLines = 1,
                 )
+            }
+        }
+
+        if (showLocationWarning) {
+            MaterialSurface(
+                onClick = ::openDeviceLocationSettings,
+                enabled = canConfigure,
+                modifier = Modifier.fillMaxWidth().testTag("locationServicesBanner")
+                    .semantics { liveRegion = LiveRegionMode.Polite },
+                shape = RoundedCornerShape(14.dp),
+                color = MaterialTheme.colorScheme.errorContainer,
+                contentColor = MaterialTheme.colorScheme.onErrorContainer,
+            ) {
+                Row(
+                    Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(Icons.Outlined.LocationOff, contentDescription = null, modifier = Modifier.size(22.dp))
+                    Column {
+                        Text("Unable to get location", style = MaterialTheme.typography.titleSmall)
+                        Text("Please turn on Location Services", style = MaterialTheme.typography.bodySmall)
+                    }
+                }
             }
         }
 

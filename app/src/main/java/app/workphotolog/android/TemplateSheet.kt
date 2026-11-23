@@ -65,10 +65,6 @@ private enum class TemplateTab(val label: String, val tag: String) {
     PRESETS("Presets", "presetStyles"), EXPLORE("Explore", "exploreStyles"), SAVED("Saved styles", "savedStyles"),
 }
 
-private enum class ExploreCategory(val label: String) {
-    ALL("All"), DAILY("Daily work"), INSPECTION("Inspection"), ASSETS("Assets"), HANDOVER("Handover"),
-}
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun StampTemplateSheet(
@@ -201,15 +197,10 @@ fun StampTemplateSheet(
                         }
                     } else {
                         val catalog = if (tab == TemplateTab.EXPLORE) exploreTemplates else starterTemplates
-                        val search = query.trim()
                         val options = catalog.filter { option ->
                             val matchesCategory = tab != TemplateTab.EXPLORE ||
                                 category == ExploreCategory.ALL || option.category == category
-                            matchesCategory && (
-                                option.title.contains(search, ignoreCase = true) ||
-                                    option.description.contains(search, ignoreCase = true) ||
-                                    option.category?.label?.contains(search, ignoreCase = true) == true
-                            )
+                            matchesCategory && option.matches(query)
                         }
                         if (options.isEmpty()) {
                             Text("No styles match your search.", modifier = Modifier.padding(vertical = 12.dp))
@@ -273,126 +264,6 @@ fun StampTemplateSheet(
         )
     }
 }
-
-private data class StarterTemplate(
-    val title: String,
-    val description: String,
-    val tag: String,
-    val template: StampTemplate,
-    val category: ExploreCategory? = null,
-)
-
-private val starterTemplates = listOf(
-    StarterTemplate("Clean photo", "Capture without a stamp", "templateClean", StampTemplate()),
-    StarterTemplate("Field note", "Record an observation", "templateFieldNote", StampTemplate.DEFAULT_COPY),
-    StarterTemplate(
-        "Time & place", "Show time and address", "templateClock",
-        StampTemplate(StampPreset.SITE_VISIT, StampColor.JADE, heading = "Time & place", layout = StampLayout.CLOCK),
-    ),
-    StarterTemplate(
-        "Site visit", "Document a site check", "templateSiteVisit",
-        StampTemplate(StampPreset.SITE_VISIT, StampColor.BLUE, layout = StampLayout.LEDGER),
-    ),
-    StarterTemplate(
-        "Completion", "Mark work finished", "templateCompletion",
-        StampTemplate(StampPreset.COMPLETION, StampColor.AMBER, layout = StampLayout.PLAIN),
-    ),
-    StarterTemplate(
-        "Inspection", "Record a finding", "templateInspection",
-        StampTemplate(StampPreset.SITE_VISIT, StampColor.JADE, heading = "Inspection", layout = StampLayout.LEDGER),
-    ),
-    StarterTemplate(
-        "Arrival", "Log a crew’s arrival", "templateArrival",
-        StampTemplate(StampPreset.SITE_VISIT, StampColor.AMBER, heading = "Arrival", size = StampSize.COMPACT),
-    ),
-    StarterTemplate(
-        "Safety round", "Document a safety check", "templateSafety",
-        StampTemplate(StampPreset.FIELD_NOTE, StampColor.COPPER, heading = "Safety round"),
-    ),
-    StarterTemplate(
-        "Asset record", "Identify equipment on site", "templateAsset",
-        StampTemplate(StampPreset.SITE_VISIT, StampColor.LILAC, heading = "Asset record", showPhotoCode = true),
-    ),
-    StarterTemplate(
-        "Service visit", "Log a maintenance call", "templateService",
-        StampTemplate(StampPreset.COMPLETION, StampColor.JADE, heading = "Service visit", layout = StampLayout.LEDGER),
-    ),
-    StarterTemplate(
-        "Work report", "Capture a progress update", "templateReport",
-        StampTemplate(StampPreset.FIELD_NOTE, StampColor.BLUE, heading = "Work report", layout = StampLayout.LEDGER),
-    ),
-    StarterTemplate(
-        "Cleaning", "Record a finished clean", "templateCleaning",
-        StampTemplate(StampPreset.COMPLETION, StampColor.LILAC, heading = "Cleaning", layout = StampLayout.PLAIN),
-    ),
-)
-
-private val exploreTemplates = listOf(
-    StarterTemplate(
-        "Shift log", "Clock a crew onto the site", "exploreShiftLog",
-        StampTemplate(
-            StampPreset.SITE_VISIT, StampColor.JADE, heading = "Shift log", layout = StampLayout.CLOCK,
-            showNote = false,
-        ),
-        ExploreCategory.DAILY,
-    ),
-    StarterTemplate(
-        "Progress journal", "Record a daily milestone and note", "exploreProgress",
-        StampTemplate(
-            StampPreset.FIELD_NOTE, StampColor.BLUE, heading = "Progress journal", layout = StampLayout.LEDGER,
-            size = StampSize.LARGE, position = StampPosition.BOTTOM_RIGHT,
-        ),
-        ExploreCategory.DAILY,
-    ),
-    StarterTemplate(
-        "Hazard report", "Make a safety note easy to spot", "exploreHazard",
-        StampTemplate(
-            StampPreset.FIELD_NOTE, StampColor.COPPER, heading = "Hazard report", layout = StampLayout.PANEL,
-            showStyledNote = true, styledNoteStyle = StampNoteStyle.ALERT,
-        ),
-        ExploreCategory.INSPECTION,
-    ),
-    StarterTemplate(
-        "Condition survey", "Record an inspection and site conditions", "exploreCondition",
-        StampTemplate(
-            StampPreset.SITE_VISIT, StampColor.LILAC, heading = "Condition survey", layout = StampLayout.LEDGER,
-            showWeather = true, showPhotoCode = true,
-        ),
-        ExploreCategory.INSPECTION,
-    ),
-    StarterTemplate(
-        "Equipment audit", "Match an asset to its photo code", "exploreEquipment",
-        StampTemplate(
-            StampPreset.FIELD_NOTE, StampColor.OLIVE, heading = "Equipment audit", layout = StampLayout.PLAIN,
-            showPhotoCode = true, textColor = StampTextColor.MINT,
-        ),
-        ExploreCategory.ASSETS,
-    ),
-    StarterTemplate(
-        "Utility locate", "Show a recorded position and direction", "exploreUtility",
-        StampTemplate(
-            StampPreset.SITE_VISIT, StampColor.BLUE, heading = "Utility locate", layout = StampLayout.LEDGER,
-            showCoordinates = true, showMap = true, showCompass = true,
-        ),
-        ExploreCategory.ASSETS,
-    ),
-    StarterTemplate(
-        "Handover brief", "Include a person and contact for follow-up", "exploreHandover",
-        StampTemplate(
-            StampPreset.COMPLETION, StampColor.JADE, heading = "Handover brief", layout = StampLayout.PANEL,
-            showBusinessCard = true, position = StampPosition.TOP_RIGHT,
-        ),
-        ExploreCategory.HANDOVER,
-    ),
-    StarterTemplate(
-        "Closeout record", "File a finished result with its photo code", "exploreCloseout",
-        StampTemplate(
-            StampPreset.COMPLETION, StampColor.AMBER, heading = "Closeout record", layout = StampLayout.PLAIN,
-            showPhotoCode = true, position = StampPosition.TOP_LEFT,
-        ),
-        ExploreCategory.HANDOVER,
-    ),
-)
 
 @Composable
 private fun TemplateGrid(
