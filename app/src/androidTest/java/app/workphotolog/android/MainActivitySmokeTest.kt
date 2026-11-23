@@ -348,7 +348,7 @@ class MainActivitySmokeTest {
         compose.onNodeWithTag("exploreStyles").performClick()
         compose.onNodeWithTag("exploreCategoryINSPECTION").performScrollTo().performClick()
         compose.onNodeWithTag("exploreHazard").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("Presets").performClick()
+        compose.onNodeWithTag("presetStyles").performScrollTo().performClick()
         compose.onNodeWithTag("templateClean").performScrollTo().performClick()
         compose.onNodeWithTag("applyTemplate").performClick()
     }
@@ -380,6 +380,8 @@ class MainActivitySmokeTest {
         compose.onNodeWithText("New project").performClick()
         compose.onNodeWithTag("newProjectName").performTextInput(name)
         compose.onNodeWithText("Create project").performClick()
+        val camera = hasTestTag("projectPicker") and isEnabled()
+        compose.waitUntil(15_000) { compose.onAllNodes(camera).fetchSemanticsNodes().isNotEmpty() }
         waitForText(name)
     }
 
