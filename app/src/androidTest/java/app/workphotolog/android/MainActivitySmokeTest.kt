@@ -300,6 +300,7 @@ class MainActivitySmokeTest {
         compose.onNodeWithTag("stampLargeClock").performScrollTo().performClick()
         compose.onNodeWithTag("stampTypographySERIF").performScrollTo().performClick()
         compose.onNodeWithTag("stampSizeLARGE").performScrollTo().performClick()
+        compose.onNodeWithTag("stampDragCanvas").performScrollTo()
         for (startX in listOf(0.17f, 0.37f, 0.46f)) {
             compose.onNodeWithTag("stampDragCanvas").performTouchInput {
                 down(Offset(width * startX, height * 0.85f))
