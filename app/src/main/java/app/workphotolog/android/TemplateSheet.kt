@@ -9,10 +9,13 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
@@ -27,21 +30,17 @@ import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -54,7 +53,8 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.launch
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 
 private val templateSaver = Saver<StampTemplate, String>(
     save = { it.toJson() },
@@ -65,7 +65,6 @@ private enum class TemplateTab(val label: String, val tag: String) {
     PRESETS("Presets", "presetStyles"), EXPLORE("Explore", "exploreStyles"), SAVED("Saved styles", "savedStyles"),
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun StampTemplateSheet(
     template: StampTemplate,
@@ -76,7 +75,8 @@ fun StampTemplateSheet(
     onDeleteTemplate: (String) -> Unit = {},
     preview: StampPreview? = null,
 ) {
-    var draft by rememberSaveable(stateSaver = templateSaver) { mutableStateOf(template) }
+    val appliedTemplate = rememberSaveable(saver = templateSaver) { template }
+    var draft by rememberSaveable(stateSaver = templateSaver) { mutableStateOf(appliedTemplate) }
     var editing by rememberSaveable { mutableStateOf(false) }
     var tab by rememberSaveable { mutableStateOf(TemplateTab.PRESETS) }
     var category by rememberSaveable { mutableStateOf(ExploreCategory.ALL) }
@@ -87,159 +87,182 @@ fun StampTemplateSheet(
     }
     var saving by rememberSaveable { mutableStateOf(false) }
     var removeName by rememberSaveable { mutableStateOf<String?>(null) }
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val scope = rememberCoroutineScope()
+    var confirmDiscard by rememberSaveable { mutableStateOf(false) }
+    val requestClose = {
+        if (draft == appliedTemplate) onDismiss() else confirmDiscard = true
+    }
 
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        containerColor = MaterialTheme.colorScheme.surface,
+    Dialog(
+        onDismissRequest = { if (editing) editing = false else requestClose() },
+        properties = DialogProperties(
+            dismissOnClickOutside = false,
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false,
+        ),
     ) {
-        Column(Modifier.fillMaxWidth().testTag("stampSheet")) {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(start = if (editing) 12.dp else 24.dp, end = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
+        Box(Modifier.fillMaxSize().safeDrawingPadding(), contentAlignment = Alignment.BottomCenter) {
+            Column(
+                Modifier.widthIn(max = 640.dp).fillMaxWidth()
+                    .clip(RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp))
+                    .background(MaterialTheme.colorScheme.surface)
+                    .padding(top = 8.dp)
+                    .testTag("stampSheet"),
             ) {
-                if (editing) {
-                    IconButton(onClick = { editing = false }) {
-                        Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back to templates")
-                    }
-                }
-                Text(
-                    if (editing) "Customize stamp" else "Templates",
-                    modifier = Modifier.weight(1f).semantics { heading() },
-                    style = MaterialTheme.typography.headlineSmall,
-                )
-                IconButton(onClick = {
-                    scope.launch {
-                        sheetState.hide()
-                        onDismiss()
-                    }
-                }) {
-                    Icon(Icons.Outlined.Close, contentDescription = "Close templates")
-                }
-            }
-
-            val body = Modifier.weight(1f, fill = false)
-            if (editing) {
-                StampStudioEditor(draft, { draft = it }, body, preview)
-            } else {
-                Column(
-                    modifier = body.verticalScroll(rememberScrollState()).fillMaxWidth()
-                        .padding(horizontal = 20.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(start = if (editing) 12.dp else 24.dp, end = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        for (destination in TemplateTab.entries) {
-                            FilterChip(
-                                selected = tab == destination,
-                                onClick = {
-                                    if (tab != destination) query = ""
-                                    tab = destination
-                                },
-                                label = { Text(destination.label) },
-                                modifier = Modifier.testTag(destination.tag),
-                            )
+                    if (editing) {
+                        IconButton(onClick = { editing = false }) {
+                            Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back to templates")
                         }
                     }
-                    OutlinedTextField(
-                        value = query,
-                        onValueChange = { query = it.take(64) },
-                        label = { Text("Search styles") },
-                        leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null) },
-                        trailingIcon = if (query.isNotEmpty()) ({
-                            IconButton(onClick = { query = "" }) {
-                                Icon(Icons.Outlined.Close, contentDescription = "Clear search")
-                            }
-                        }) else null,
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth().testTag("searchTemplates"),
+                    Text(
+                        if (editing) "Customize stamp" else "Templates",
+                        modifier = Modifier.weight(1f).semantics { heading() },
+                        style = MaterialTheme.typography.headlineSmall,
                     )
-                    if (tab == TemplateTab.EXPLORE) {
+                    IconButton(onClick = requestClose) {
+                        Icon(Icons.Outlined.Close, contentDescription = "Close templates")
+                    }
+                }
+
+                val body = Modifier.weight(1f, fill = false)
+                if (editing) {
+                    StampStudioEditor(draft, { draft = it }, body, preview)
+                } else {
+                    Column(
+                        modifier = body.testTag("templateCatalogScroll").verticalScroll(rememberScrollState()).fillMaxWidth()
+                            .padding(horizontal = 20.dp, vertical = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            for (filter in ExploreCategory.entries) {
+                            for (destination in TemplateTab.entries) {
                                 FilterChip(
-                                    selected = category == filter,
-                                    onClick = { category = filter },
-                                    label = { Text(filter.label) },
-                                    modifier = Modifier.testTag("exploreCategory" + filter.name),
+                                    selected = tab == destination,
+                                    onClick = {
+                                        if (tab != destination) query = ""
+                                        tab = destination
+                                    },
+                                    label = { Text(destination.label) },
+                                    modifier = Modifier.testTag(destination.tag),
                                 )
                             }
                         }
-                    }
-                    if (tab == TemplateTab.SAVED) {
-                        val entries = library.entries.filter { it.key.contains(query.trim(), ignoreCase = true) }
-                            .sortedBy { it.key.lowercase() }
-                        if (entries.isEmpty()) {
-                            Text(
-                                if (library.isEmpty()) "Save a custom stamp to use it again." else "No styles match your search.",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(vertical = 12.dp),
-                            )
-                        }
-                        Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            for ((name, saved) in entries) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    TemplateCard(
-                                        name, saved, activeName == name, "savedStamp",
-                                        modifier = Modifier.weight(1f),
-                                    ) {
-                                        activeName = name
-                                        activePreset = null
-                                        draft = saved
-                                    }
-                                    IconButton(onClick = { removeName = name }) {
-                                        Icon(Icons.Outlined.Delete, contentDescription = "Delete " + name)
-                                    }
+                        OutlinedTextField(
+                            value = query,
+                            onValueChange = { query = it.take(64) },
+                            label = { Text("Search styles") },
+                            leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null) },
+                            trailingIcon = if (query.isNotEmpty()) ({
+                                IconButton(onClick = { query = "" }) {
+                                    Icon(Icons.Outlined.Close, contentDescription = "Clear search")
+                                }
+                            }) else null,
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth().testTag("searchTemplates"),
+                        )
+                        if (tab == TemplateTab.EXPLORE) {
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                for (filter in ExploreCategory.entries) {
+                                    FilterChip(
+                                        selected = category == filter,
+                                        onClick = { category = filter },
+                                        label = { Text(filter.label) },
+                                        modifier = Modifier.testTag("exploreCategory" + filter.name),
+                                    )
                                 }
                             }
                         }
-                    } else {
-                        val catalog = if (tab == TemplateTab.EXPLORE) exploreTemplates else starterTemplates
-                        val options = catalog.filter { option ->
-                            val matchesCategory = tab != TemplateTab.EXPLORE ||
-                                category == ExploreCategory.ALL || option.category == category
-                            matchesCategory && option.matches(query)
-                        }
-                        if (options.isEmpty()) {
-                            Text("No styles match your search.", modifier = Modifier.padding(vertical = 12.dp))
-                        }
-                        TemplateGrid(options, draft, activePreset) { starter ->
-                            activeName = null
-                            if (activePreset != starter.tag) draft = starter.template
-                            activePreset = starter.tag
+                        if (tab == TemplateTab.SAVED) {
+                            val entries = library.entries.filter { it.key.contains(query.trim(), ignoreCase = true) }
+                                .sortedBy { it.key.lowercase() }
+                            if (entries.isEmpty()) {
+                                Text(
+                                    if (library.isEmpty()) "Save a custom stamp to use it again." else "No styles match your search.",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(vertical = 12.dp),
+                                )
+                            }
+                            Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                for ((name, saved) in entries) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        TemplateCard(
+                                            name, saved, activeName == name, "savedStamp",
+                                            modifier = Modifier.weight(1f),
+                                        ) {
+                                            activeName = name
+                                            activePreset = null
+                                            draft = saved
+                                        }
+                                        IconButton(onClick = { removeName = name }) {
+                                            Icon(Icons.Outlined.Delete, contentDescription = "Delete " + name)
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            val catalog = if (tab == TemplateTab.EXPLORE) exploreTemplates else starterTemplates
+                            val options = catalog.filter { option ->
+                                val matchesCategory = tab != TemplateTab.EXPLORE ||
+                                    category == ExploreCategory.ALL || option.category == category
+                                matchesCategory && option.matches(query)
+                            }
+                            if (options.isEmpty()) {
+                                Text("No styles match your search.", modifier = Modifier.padding(vertical = 12.dp))
+                            }
+                            TemplateGrid(options, draft, activePreset) { starter ->
+                                activeName = null
+                                if (activePreset != starter.tag) draft = starter.template
+                                activePreset = starter.tag
+                            }
                         }
                     }
                 }
-            }
 
-            HorizontalDivider(Modifier.padding(top = 8.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                if (editing) {
-                    TextButton(
-                        onClick = { saving = true },
-                        modifier = Modifier.weight(1f).testTag("saveTemplateStyle"),
-                    ) { Text("Save style") }
-                } else {
-                    TextButton(
-                        onClick = { editing = true },
-                        enabled = draft.preset != null,
-                        modifier = Modifier.weight(1f).testTag("editTemplate"),
-                    ) {
-                        Icon(Icons.Outlined.Tune, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Text("Customize", Modifier.padding(start = 6.dp))
+                HorizontalDivider(Modifier.padding(top = 8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (editing) {
+                        TextButton(
+                            onClick = { saving = true },
+                            modifier = Modifier.weight(1f).testTag("saveTemplateStyle"),
+                        ) { Text("Save style") }
+                    } else {
+                        TextButton(
+                            onClick = { editing = true },
+                            enabled = draft.preset != null,
+                            modifier = Modifier.weight(1f).testTag("editTemplate"),
+                        ) {
+                            Icon(Icons.Outlined.Tune, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Text("Customize", Modifier.padding(start = 6.dp))
+                        }
                     }
-                }
-                Button(onClick = { onApply(draft) }, modifier = Modifier.weight(1f).testTag("applyTemplate")) {
-                    Text("Apply")
+                    Button(onClick = { onApply(draft) }, modifier = Modifier.weight(1f).testTag("applyTemplate")) {
+                        Text("Apply")
+                    }
                 }
             }
         }
+    }
+    if (confirmDiscard) {
+        AlertDialog(
+            onDismissRequest = { confirmDiscard = false },
+            title = { Text("Discard stamp changes?") },
+            text = { Text("Your changes haven’t been applied.") },
+            confirmButton = {
+                TextButton(onClick = onDismiss) {
+                    Text("Discard changes", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmDiscard = false }) { Text("Keep editing") }
+            },
+        )
     }
     if (saving) {
         SaveStyleDialog(activeName.orEmpty(), library.keys, onDismiss = { saving = false }) { name ->

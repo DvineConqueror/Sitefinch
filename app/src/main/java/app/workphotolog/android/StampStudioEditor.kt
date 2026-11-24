@@ -146,7 +146,7 @@ internal fun StampStudioEditor(
         }
         Column(
             Modifier.fillMaxWidth()
-                .then(if (pinPreview) Modifier else Modifier.verticalScroll(mainScroll))
+                .then(if (pinPreview) Modifier else Modifier.testTag("stampEditorScroll").verticalScroll(mainScroll))
                 .padding(horizontal = 20.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
@@ -177,7 +177,7 @@ internal fun StampStudioEditor(
                 StudioSection.STYLE -> {
                     if (pinPreview) {
                         Column(
-                            Modifier.weight(1f, fill = false).verticalScroll(styleScroll),
+                            Modifier.weight(1f, fill = false).testTag("stampEditorScroll").verticalScroll(styleScroll),
                             verticalArrangement = Arrangement.spacedBy(12.dp),
                             content = { appearance() },
                         )

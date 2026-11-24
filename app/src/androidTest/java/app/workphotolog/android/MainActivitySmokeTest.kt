@@ -89,6 +89,10 @@ class MainActivitySmokeTest {
         compose.onNodeWithText("Check original file").performScrollTo().performClick()
         waitForText("Original matches its saved SHA-256 hash.")
         compose.onNodeWithText("Share original").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Edit stamp").performScrollTo().performClick()
+        compose.onNodeWithTag("templateClock").performScrollTo().performClick()
+        compose.onNodeWithTag("applyTemplate").performClick()
+        compose.onNodeWithText("Share stamped copy").performScrollTo().assertIsDisplayed()
     }
 
     @Test
