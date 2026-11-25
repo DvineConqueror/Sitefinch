@@ -2,6 +2,7 @@ package app.workphotolog.android
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -41,6 +42,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -62,7 +64,8 @@ private val templateSaver = Saver<StampTemplate, String>(
 )
 
 private enum class TemplateTab(val label: String, val tag: String) {
-    PRESETS("Presets", "presetStyles"), EXPLORE("Explore", "exploreStyles"), SAVED("Saved styles", "savedStyles"),
+    PRESETS("Presets", "presetStyles"), FIELD_KITS("Field kits", "fieldKitStyles"),
+    EXPLORE("Explore", "exploreStyles"), SAVED("Saved", "savedStyles"),
 }
 
 @Composable
@@ -76,14 +79,17 @@ fun StampTemplateSheet(
     preview: StampPreview? = null,
 ) {
     val appliedTemplate = rememberSaveable(saver = templateSaver) { template }
+    val appliedKit = remember(appliedTemplate) {
+        fieldKitTemplates.firstOrNull { it.template == appliedTemplate }
+    }
     var draft by rememberSaveable(stateSaver = templateSaver) { mutableStateOf(appliedTemplate) }
     var editing by rememberSaveable { mutableStateOf(false) }
-    var tab by rememberSaveable { mutableStateOf(TemplateTab.PRESETS) }
+    var tab by rememberSaveable { mutableStateOf(if (appliedKit == null) TemplateTab.PRESETS else TemplateTab.FIELD_KITS) }
     var category by rememberSaveable { mutableStateOf(ExploreCategory.ALL) }
     var query by rememberSaveable { mutableStateOf("") }
     var activeName by rememberSaveable { mutableStateOf<String?>(null) }
     var activePreset by rememberSaveable {
-        mutableStateOf((starterTemplates + exploreTemplates).firstOrNull { it.template == template }?.tag)
+        mutableStateOf(appliedKit?.tag ?: (starterTemplates + exploreTemplates).firstOrNull { it.template == appliedTemplate }?.tag)
     }
     var saving by rememberSaveable { mutableStateOf(false) }
     var removeName by rememberSaveable { mutableStateOf<String?>(null) }
@@ -162,16 +168,16 @@ fun StampTemplateSheet(
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth().testTag("searchTemplates"),
                         )
-                        if (tab == TemplateTab.EXPLORE) {
+                        if (tab == TemplateTab.FIELD_KITS) {
+                            Row(
+                                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                TemplateCategories(category) { category = it }
+                            }
+                        } else if (tab == TemplateTab.EXPLORE) {
                             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                for (filter in ExploreCategory.entries) {
-                                    FilterChip(
-                                        selected = category == filter,
-                                        onClick = { category = filter },
-                                        label = { Text(filter.label) },
-                                        modifier = Modifier.testTag("exploreCategory" + filter.name),
-                                    )
-                                }
+                                TemplateCategories(category) { category = it }
                             }
                         }
                         if (tab == TemplateTab.SAVED) {
@@ -203,9 +209,13 @@ fun StampTemplateSheet(
                                 }
                             }
                         } else {
-                            val catalog = if (tab == TemplateTab.EXPLORE) exploreTemplates else starterTemplates
+                            val catalog = when (tab) {
+                                TemplateTab.EXPLORE -> exploreTemplates
+                                TemplateTab.FIELD_KITS -> fieldKitTemplates
+                                else -> starterTemplates
+                            }
                             val options = catalog.filter { option ->
-                                val matchesCategory = tab != TemplateTab.EXPLORE ||
+                                val matchesCategory = tab == TemplateTab.PRESETS ||
                                     category == ExploreCategory.ALL || option.category == category
                                 matchesCategory && option.matches(query)
                             }
@@ -289,6 +299,18 @@ fun StampTemplateSheet(
 }
 
 @Composable
+private fun TemplateCategories(category: ExploreCategory, onSelect: (ExploreCategory) -> Unit) {
+    for (filter in ExploreCategory.entries) {
+        FilterChip(
+            selected = category == filter,
+            onClick = { onSelect(filter) },
+            label = { Text(filter.label) },
+            modifier = Modifier.testTag("exploreCategory" + filter.name),
+        )
+    }
+}
+
+@Composable
 private fun TemplateGrid(
     options: List<StarterTemplate>,
     draft: StampTemplate,
@@ -305,7 +327,7 @@ private fun TemplateGrid(
                         val isSelected = activePreset == option.tag
                         TemplateCard(
                             option.title, if (isSelected) draft else option.template, isSelected,
-                            option.tag, Modifier.weight(1f), option.description,
+                            option.tag, Modifier.weight(1f), option.description, option.sampleSubject,
                         ) { onSelect(option) }
                     }
                     if (columns == 2 && row.size == 1) Spacer(Modifier.weight(1f))
@@ -323,6 +345,7 @@ private fun TemplateCard(
     tag: String,
     modifier: Modifier,
     description: String? = null,
+    sampleSubject: String? = null,
     onSelect: () -> Unit,
 ) {
     val shape = RoundedCornerShape(14.dp)
@@ -337,7 +360,10 @@ private fun TemplateCard(
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         val logo = rememberStampLogo(template.logoId)
-        StudioPreviewFrame(template, Modifier.fillMaxWidth().heightIn(min = 88.dp), compact = true, logo = logo)
+        StudioPreviewFrame(
+            template, Modifier.fillMaxWidth().heightIn(min = 88.dp), compact = true,
+            logo = logo, sampleSubject = sampleSubject,
+        )
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text(
                 name,

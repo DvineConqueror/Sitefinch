@@ -10,6 +10,8 @@ import android.graphics.Path
 import android.graphics.Rect
 import android.graphics.RectF
 import android.net.Uri
+import androidx.core.content.ContextCompat
+import androidx.core.graphics.createBitmap
 import androidx.core.graphics.withSave
 import java.io.File
 import java.io.IOException
@@ -20,8 +22,9 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 
 class StampLogoStore(context: Context) {
-    private val resolver = context.applicationContext.contentResolver
-    private val directory = File(context.applicationContext.filesDir, "stamp-logos")
+    private val app = context.applicationContext
+    private val resolver = app.contentResolver
+    private val directory = File(app.filesDir, "stamp-logos")
 
     suspend fun importLogo(uri: Uri): String = withContext(Dispatchers.IO) {
         if (uri.scheme != ContentResolver.SCHEME_CONTENT) throw IOException("Select an image from the photo picker")
@@ -79,7 +82,15 @@ class StampLogoStore(context: Context) {
     suspend fun loadLogo(id: String?): Bitmap? = withContext(Dispatchers.IO) { loadForRender(id) }
 
     internal fun loadForRender(id: String?): Bitmap? {
-        if (id == null || !validStampLogoId(id)) return null
+        if (id == null) return null
+        BuiltInStampMark.entries.firstOrNull { it.id == id }?.let { mark ->
+            val drawable = ContextCompat.getDrawable(app, mark.drawable) ?: return null
+            val bitmap = createBitmap(160, 160)
+            drawable.setBounds(0, 0, bitmap.width, bitmap.height)
+            drawable.draw(Canvas(bitmap))
+            return bitmap
+        }
+        if (!validStampLogoId(id)) return null
         val file = File(directory, "$id.png")
         if (!file.isFile) return null
         return try {
@@ -95,6 +106,20 @@ class StampLogoStore(context: Context) {
         const val MAX_LOGO_EDGE = 640
     }
 }
+
+internal enum class BuiltInStampMark(val id: String, val drawable: Int) {
+    PARCEL("sitefinch-mark-parcel", R.drawable.stamp_mark_parcel),
+    PATROL("sitefinch-mark-patrol", R.drawable.stamp_mark_patrol),
+    CIVIC("sitefinch-mark-civic", R.drawable.stamp_mark_civic),
+    CREW("sitefinch-mark-crew", R.drawable.stamp_mark_crew),
+    RETAIL("sitefinch-mark-retail", R.drawable.stamp_mark_retail),
+    BUILD("sitefinch-mark-build", R.drawable.stamp_mark_build),
+    SCHOOL("sitefinch-mark-school", R.drawable.stamp_mark_school),
+    UTILITY("sitefinch-mark-utility", R.drawable.stamp_mark_utility),
+}
+
+internal fun knownStampLogoId(id: String): Boolean =
+    validStampLogoId(id) || BuiltInStampMark.entries.any { it.id == id }
 
 fun stampLogoSource(bitmap: Bitmap, zoom: Float): Rect {
     val edge = (minOf(bitmap.width, bitmap.height) / boundedLogoZoom(zoom)).roundToInt().coerceAtLeast(1)

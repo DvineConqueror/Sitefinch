@@ -11,6 +11,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsOff
+import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -22,6 +23,8 @@ import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeDown
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -29,6 +32,41 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class StampTemplateSheetTest {
     @get:Rule val compose = createComposeRule()
+
+    @Test
+    fun fieldKitsApplyAndTheirBundledMarksSurviveReload() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val store = StampLogoStore(context)
+        assertEquals(21, fieldKitTemplates.map { it.tag }.toSet().size)
+        for (kit in fieldKitTemplates) {
+            val restored = StampTemplate.fromJson(kit.template.toJson())
+            assertEquals(kit.template, restored)
+            val logo = store.loadForRender(restored.logoId)
+            assertNotNull(kit.title, logo)
+            logo?.recycle()
+        }
+
+        var applied: StampTemplate? = null
+        compose.setContent {
+            MaterialTheme {
+                StampTemplateSheet(StampTemplate(), onApply = { applied = it }, onDismiss = {})
+            }
+        }
+        compose.onNodeWithTag("fieldKitStyles").performClick()
+        compose.onNodeWithTag("exploreCategorySHIPPING").performScrollTo().performClick()
+        compose.onNodeWithTag("kitPatrolPost").assertDoesNotExist()
+        compose.onNodeWithTag("kitParcelRoute").performScrollTo().performClick()
+        compose.onNodeWithTag("editTemplate").performClick()
+        compose.onNodeWithTag("stampEditorLOGO").performScrollTo().performClick()
+        val logoPreview = hasContentDescription("Logo crop preview")
+        compose.waitUntil(10_000) { compose.onAllNodes(logoPreview).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNode(logoPreview).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("applyTemplate").performClick()
+        compose.runOnIdle {
+            assertEquals(BuiltInStampMark.PARCEL.id, applied?.logoId)
+            assertEquals(StampLayout.TICKET, applied?.layout)
+        }
+    }
 
     @Test
     fun scrollingAndBackKeepTheDraftUntilDiscarded() {

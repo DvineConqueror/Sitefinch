@@ -20,7 +20,7 @@ enum class StampColor(val label: String, val accent: Int, internal val backgroun
 }
 
 enum class StampLayout(val label: String) {
-    PANEL("Panel"), LEDGER("Ledger"), PLAIN("Plain"), CLOCK("Clock"),
+    PANEL("Panel"), LEDGER("Ledger"), PLAIN("Plain"), CLOCK("Clock"), TICKET("Ticket"),
 }
 
 enum class StampPosition(val label: String, internal val right: Boolean, internal val bottom: Boolean) {
@@ -176,7 +176,7 @@ data class StampTemplate(
         .put("address", address.boundedStampText())
         .put("tags", tags.boundedStampText())
         .put("showPhotoCode", showPhotoCode)
-        .put("logoId", logoId?.takeIf(::validStampLogoId))
+        .put("logoId", logoId?.takeIf(::knownStampLogoId))
         .put("logoSide", logoSide.name)
         .put("logoZoom", boundedLogoZoom(logoZoom).toDouble())
         .put("showLogo", showLogo)
@@ -245,7 +245,7 @@ data class StampTemplate(
                 address = data.string("address"),
                 tags = data.string("tags"),
                 showPhotoCode = data.optBoolean("showPhotoCode", false),
-                logoId = (data.opt("logoId") as? String)?.takeIf(::validStampLogoId),
+                logoId = (data.opt("logoId") as? String)?.takeIf(::knownStampLogoId),
                 logoSide = data.enum<StampLogoSide>("logoSide") ?: StampLogoSide.LEFT,
                 logoZoom = boundedLogoZoom(data.optDouble("logoZoom", 1.0).toFloat()),
                 showLogo = data.optBoolean("showLogo", true),

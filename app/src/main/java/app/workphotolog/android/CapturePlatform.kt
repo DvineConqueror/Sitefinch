@@ -272,6 +272,7 @@ fun drawStamp(
     val inset = unit * 0.039f
     val padding = unit * 0.036f * template.size.scale
     val clockLayout = template.layout == StampLayout.CLOCK
+    val ticket = template.layout == StampLayout.TICKET
     val baseWidth = if (clockLayout) minOf(width * 0.72f, unit * 1.08f)
         else width * (if (width > height) 0.72f else 0.90f)
     val cardWidth = minOf(baseWidth * template.size.scale, width - 2 * inset)
@@ -436,7 +437,7 @@ fun drawStamp(
     val headerHeight = maxOf(logoEdge, header.stampHeight(gap))
     val metadataHeight = metadata.stampHeight(gap)
     val hasBody = metadata.isNotEmpty() || map != null
-    val divider = template.layout == StampLayout.LEDGER && headerHeight > 0f && hasBody
+    val divider = (template.layout == StampLayout.LEDGER || ticket) && headerHeight > 0f && hasBody
     val sectionGap = if (headerHeight == 0f || !hasBody) 0f else if (divider) font * 0.73f else gap
     val mapGap = if (map != null && metadata.isNotEmpty()) gap * 2 else 0f
     val cardHeight = 2 * padding + headerHeight + sectionGap + metadataHeight + mapGap + mapHeight
@@ -511,7 +512,7 @@ fun drawStamp(
     canvas.withTranslation(wholeMove.x, wholeMove.y) {
         if (panel != null && background != null) {
             val radius = padding * fit * when (template.layout) {
-                StampLayout.CLOCK -> 1.35f
+                StampLayout.CLOCK, StampLayout.TICKET -> 1.35f
                 StampLayout.PANEL -> 0.75f
                 else -> 0.22f
             }
@@ -527,6 +528,15 @@ fun drawStamp(
             }
         }
         withScale(fit, fit, anchorX, anchorY) {
+            if (ticket && background != null && headerHeight > 0f) {
+                val margin = padding * 0.45f
+                val headerPanel = RectF(
+                    contentLeft - margin, contentTop - margin,
+                    contentLeft + contentWidth + margin, contentTop + headerHeight + margin,
+                )
+                paint.color = accent.withStampAlpha((42 * template.backgroundOpacity.boundedStampValue(0f, 1f)).roundToInt())
+                drawRoundRect(headerPanel, padding, padding, paint)
+            }
             if (logo != null && logoRect != null) {
                 val move = groupMoves.getValue(StampGroup.LOGO)
                 withTranslation(move.x / fit, move.y / fit) {

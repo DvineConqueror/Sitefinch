@@ -92,6 +92,8 @@ private enum class StudioSection(val label: String) {
     DETAILS("Details"), STYLE("Style"), LOGO("Logo"),
 }
 
+private val sampleStampLocation = LocationFix(14.6125, 121.031, 12.0, 0, "precise", altitudeMeters = 24.0)
+
 @Composable
 internal fun StampStudioEditor(
     template: StampTemplate,
@@ -205,24 +207,29 @@ internal fun StudioPreviewFrame(
     movingGroup: StampGroup? = null,
     onMove: (StampGroup, StampOffset) -> Unit = { _, _ -> },
     placement: StampPreviewGeometry? = null,
+    sampleSubject: String? = null,
 ) {
     val shape = RoundedCornerShape(if (compact) 10.dp else 14.dp)
     val image = preview?.image
-    val details = remember(template, logo, compact, preview) {
+    val sampleMap = rememberStampMap(preview == null && template.showMap, sampleStampLocation)
+    val details = remember(template, logo, compact, preview, sampleMap, sampleSubject) {
         val source = preview ?: StampPreview(
-            project = if (compact) "North roof" else "North roof inspection",
-            note = if (compact) "Flashing checked" else "Flashing inspected",
+            project = sampleSubject ?: if (compact) "North roof" else "North roof inspection",
+            note = if (sampleSubject != null) "" else if (compact) "Flashing checked" else "Flashing inspected",
             time = 1_794_302_520_000L,
             offset = 0,
-            location = LocationFix(14.6125, 121.031, 12.0, 0, "precise", altitudeMeters = 24.0),
+            location = sampleStampLocation,
             photoCode = "A1B2C3D4",
             headingDegrees = 42f,
+            map = sampleMap,
+            recordedAddress = if (sampleSubject != null) mapOf(AddressPart.CITY to "Harbor District") else emptyMap(),
         )
         val displayTemplate = if (preview == null) template.copy(
             styledNote = template.styledNote.ifBlank { "Check before handover" },
             businessCardName = template.businessCardName.ifBlank { "Reese Lopez" },
             businessCardRole = template.businessCardRole.ifBlank { "Site lead" },
             weather = template.weather.ifBlank { "Cloudy · 24 °C" },
+            recordedAddress = source.recordedAddress,
         ) else template.copy(recordedAddress = source.recordedAddress)
         stampDetails(
             project = source.project,

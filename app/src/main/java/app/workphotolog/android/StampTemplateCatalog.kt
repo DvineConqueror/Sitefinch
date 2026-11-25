@@ -18,6 +18,7 @@ internal data class StarterTemplate(
     val tag: String,
     val template: StampTemplate,
     val category: ExploreCategory? = null,
+    val sampleSubject: String? = null,
 ) {
     fun matches(query: String): Boolean = query.trim().split(Regex("\\s+")).all { term ->
         title.contains(term, ignoreCase = true) ||
