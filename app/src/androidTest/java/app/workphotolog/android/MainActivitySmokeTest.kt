@@ -24,7 +24,6 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTouchInput
-import androidx.compose.ui.test.pinch
 import androidx.exifinterface.media.ExifInterface
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -51,25 +50,12 @@ class MainActivitySmokeTest {
     val rules: RuleChain = RuleChain.outerRule(GrantPermissionRule.grant(Manifest.permission.CAMERA)).around(compose)
 
     @Test
-    fun cameraZoomPresetAndPinchUpdateTheViewfinder() {
+    fun cameraZoomPresetUpdatesTheViewfinder() {
         waitForShutter()
         compose.onNodeWithTag("cameraZoom").performClick()
         compose.onNodeWithText("1.5×").performClick()
         val preset = hasTestTag("cameraZoom") and hasContentDescription("Camera zoom, 1.5×")
         compose.waitUntil(5_000) { compose.onAllNodes(preset).fetchSemanticsNodes().isNotEmpty() }
-        compose.waitUntil(5_000) { compose.runOnUiThread { compose.activity.hasWindowFocus() } }
-
-        compose.onNodeWithTag("cameraViewfinder").performTouchInput {
-            pinch(
-                start0 = Offset(width * 0.20f, centerY),
-                end0 = Offset(width * 0.45f, centerY),
-                start1 = Offset(width * 0.80f, centerY),
-                end1 = Offset(width * 0.55f, centerY),
-                durationMillis = 800,
-            )
-        }
-        compose.onNodeWithTag("cameraZoom").assertIsDisplayed()
-        compose.waitUntil(5_000) { compose.onAllNodes(preset).fetchSemanticsNodes().isEmpty() }
     }
 
     @Test

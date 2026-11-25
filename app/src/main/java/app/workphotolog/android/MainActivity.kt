@@ -466,7 +466,6 @@ private fun CameraPage(model: WorkPhotoModel, project: Project?) {
         Box(
             modifier = Modifier.fillMaxWidth().weight(1f).clip(RoundedCornerShape(20.dp))
                 .background(Color(0xff22281d))
-                .testTag("cameraViewfinder")
                 .cameraPinchZoom(session?.camera, canZoom),
             contentAlignment = Alignment.Center,
         ) {

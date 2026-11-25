@@ -21,6 +21,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.PointerInputScope
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -42,12 +43,16 @@ private fun zoomLabel(ratio: Float): String =
 internal fun Modifier.cameraPinchZoom(camera: Camera?, enabled: Boolean): Modifier {
     if (camera == null || !enabled) return this
     return pointerInput(camera) {
-        detectTransformGestures { _, _, scale, _ ->
-            val state = camera.cameraInfo.zoomState.value ?: return@detectTransformGestures
+        detectCameraPinch { scale ->
+            val state = camera.cameraInfo.zoomState.value ?: return@detectCameraPinch
             val ratio = (state.zoomRatio * scale).coerceIn(state.minZoomRatio, state.maxZoomRatio)
             if (ratio != state.zoomRatio) camera.cameraControl.setZoomRatio(ratio)
         }
     }
+}
+
+internal suspend fun PointerInputScope.detectCameraPinch(onScale: (Float) -> Unit) {
+    detectTransformGestures { _, _, scale, _ -> if (scale != 1f) onScale(scale) }
 }
 
 @Composable
