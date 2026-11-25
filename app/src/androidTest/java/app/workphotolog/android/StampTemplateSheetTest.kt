@@ -12,10 +12,12 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsOff
 import androidx.compose.ui.test.assertIsOn
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -24,6 +26,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeDown
 import androidx.compose.ui.unit.dp
@@ -137,9 +140,11 @@ class StampTemplateSheetTest {
         compose.onNodeWithTag("editTemplate").performClick()
         compose.onNodeWithTag("stampEditorLAYERS").performScrollTo().performClick()
         compose.onNodeWithTag("stampSeparateLayers").performScrollTo().performClick().assertIsOn()
-        compose.onNodeWithTag("stampDragGroupCLOCK").performScrollTo().performClick()
-        compose.onNodeWithTag("stampLayerFontMONO").performScrollTo().performClick()
-        compose.onNodeWithTag("stampLayerColorGOLD").performScrollTo().performClick()
+        val clockLayer = compose.onNodeWithTag("stampDragGroupCLOCK")
+        clockLayer.performSemanticsAction(SemanticsActions.OnClick)
+        clockLayer.assertIsSelected()
+        compose.onNodeWithTag("stampLayerFontMONO").performSemanticsAction(SemanticsActions.OnClick)
+        compose.onNodeWithTag("stampLayerColorGOLD").performSemanticsAction(SemanticsActions.OnClick)
         compose.onNodeWithTag("applyTemplate").performClick()
         compose.runOnIdle {
             val updated = checkNotNull(applied)
