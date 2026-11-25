@@ -74,7 +74,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface as MaterialSurface
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -288,10 +287,8 @@ private fun CameraPage(model: WorkPhotoModel, project: Project?) {
     var showTemplates by rememberSaveable { mutableStateOf(false) }
     var showAddress by rememberSaveable { mutableStateOf(false) }
     var showNote by rememberSaveable { mutableStateOf(false) }
-    var showZoom by rememberSaveable { mutableStateOf(false) }
     var studioImage by remember { mutableStateOf<Bitmap?>(null) }
     var torchOn by remember { mutableStateOf(false) }
-    var zoom by remember { mutableStateOf(1f) }
     val status = model.recordingStatus
     val mode = model.captureMode
     val canConfigure = !model.captureLocked
@@ -472,7 +469,7 @@ private fun CameraPage(model: WorkPhotoModel, project: Project?) {
         ) {
             if (cameraGranted && !bindFailed) {
                 CameraPreview(
-                    retry, mode, frontFacing, Modifier.fillMaxSize(),
+                    retry, mode, frontFacing, Modifier.fillMaxSize().testTag("cameraViewfinder"),
                     onBound = { session = it },
                     onError = {
                         session = null
@@ -527,7 +524,6 @@ private fun CameraPage(model: WorkPhotoModel, project: Project?) {
                             PreviewTool(Icons.Outlined.Cameraswitch, "Switch camera", canConfigure) {
                                 session = null
                                 torchOn = false
-                                zoom = 1f
                                 frontFacing = !frontFacing
                             }
                         }
@@ -537,18 +533,12 @@ private fun CameraPage(model: WorkPhotoModel, project: Project?) {
                             canConfigure,
                         ) { showNote = true }
                     }
-                    val limits = bound.camera.cameraInfo.zoomState.value
-                    if (limits != null && limits.maxZoomRatio > limits.minZoomRatio) {
-                        TextButton(
-                            onClick = { showZoom = true },
-                            enabled = canConfigure,
-                            modifier = Modifier.align(Alignment.CenterEnd).padding(end = 8.dp)
-                                .background(Color(0xcc20271d), CircleShape),
-                            contentPadding = PaddingValues(horizontal = 12.dp),
-                        ) {
-                            Text(String.format(Locale.ROOT, "%.1f×", zoom), color = Color.White)
-                        }
-                    }
+                    CameraZoom(
+                        camera = bound.camera,
+                        preview = bound.view,
+                        enabled = canConfigure || (status != null && !model.recordingFinishing),
+                        modifier = Modifier.align(Alignment.CenterEnd).padding(end = 8.dp),
+                    )
                     if (status != null) {
                         val seconds = status.elapsedSeconds
                         Text(
@@ -708,7 +698,6 @@ private fun CameraPage(model: WorkPhotoModel, project: Project?) {
                             session = null
                             bindFailed = false
                             torchOn = false
-                            zoom = 1f
                             model.setCaptureMode(option)
                         }
                     },
@@ -792,39 +781,6 @@ private fun CameraPage(model: WorkPhotoModel, project: Project?) {
                 showAddress = false
             },
             onDismiss = { showAddress = false },
-        )
-    }
-    val zoomCamera = session?.camera
-    val zoomRange = zoomCamera?.cameraInfo?.zoomState?.value
-    if (showZoom && zoomCamera != null && zoomRange != null && zoomRange.minZoomRatio < zoomRange.maxZoomRatio) {
-        val minimum = zoomRange.minZoomRatio
-        val maximum = zoomRange.maxZoomRatio
-        AlertDialog(
-            onDismissRequest = { showZoom = false },
-            title = { Text("Camera zoom") },
-            text = {
-                Column {
-                    Text(String.format(Locale.ROOT, "%.1f×", zoom))
-                    Slider(
-                        value = zoom.coerceIn(minimum, maximum),
-                        onValueChange = {
-                            zoom = it
-                            zoomCamera.cameraControl.setZoomRatio(it)
-                        },
-                        valueRange = minimum..maximum,
-                        modifier = Modifier.semantics { contentDescription = "Camera zoom" },
-                    )
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        listOf(minimum, 1f, 2f).filter { it in minimum..maximum }.distinct().forEach { ratio ->
-                            TextButton(onClick = {
-                                zoom = ratio
-                                zoomCamera.cameraControl.setZoomRatio(ratio)
-                            }) { Text(String.format(Locale.ROOT, "%.1f×", ratio)) }
-                        }
-                    }
-                }
-            },
-            confirmButton = { TextButton(onClick = { showZoom = false }) { Text("Done") } },
         )
     }
 }
