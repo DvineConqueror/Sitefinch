@@ -57,13 +57,15 @@ class MainActivitySmokeTest {
         compose.onNodeWithText("1.5×").performClick()
         val preset = hasTestTag("cameraZoom") and hasContentDescription("Camera zoom, 1.5×")
         compose.waitUntil(5_000) { compose.onAllNodes(preset).fetchSemanticsNodes().isNotEmpty() }
+        compose.waitUntil(5_000) { compose.runOnUiThread { compose.activity.hasWindowFocus() } }
 
         compose.onNodeWithTag("cameraViewfinder").performTouchInput {
             pinch(
-                start0 = Offset(width * 0.40f, centerY),
-                end0 = Offset(width * 0.20f, centerY),
-                start1 = Offset(width * 0.60f, centerY),
-                end1 = Offset(width * 0.80f, centerY),
+                start0 = Offset(width * 0.20f, centerY),
+                end0 = Offset(width * 0.45f, centerY),
+                start1 = Offset(width * 0.80f, centerY),
+                end1 = Offset(width * 0.55f, centerY),
+                durationMillis = 800,
             )
         }
         compose.onNodeWithTag("cameraZoom").assertIsDisplayed()
