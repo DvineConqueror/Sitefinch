@@ -1,11 +1,9 @@
 package app.workphotolog.android
 
-import android.annotation.SuppressLint
-import android.view.ScaleGestureDetector
 import androidx.camera.core.Camera
 import androidx.camera.core.ZoomState
-import androidx.camera.view.PreviewView
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
@@ -22,6 +20,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -40,32 +39,28 @@ internal fun cameraZoomPresets(minimum: Float, maximum: Float): List<Float> =
 private fun zoomLabel(ratio: Float): String =
     String.format(Locale.ROOT, "%.2f", ratio).trimEnd('0').trimEnd('.') + "×"
 
-@SuppressLint("ClickableViewAccessibility") // The separate zoom button exposes accessible controls.
+internal fun Modifier.cameraPinchZoom(camera: Camera?, enabled: Boolean): Modifier {
+    if (camera == null || !enabled) return this
+    return pointerInput(camera) {
+        detectTransformGestures { _, _, scale, _ ->
+            val state = camera.cameraInfo.zoomState.value ?: return@detectTransformGestures
+            val ratio = (state.zoomRatio * scale).coerceIn(state.minZoomRatio, state.maxZoomRatio)
+            if (ratio != state.zoomRatio) camera.cameraControl.setZoomRatio(ratio)
+        }
+    }
+}
+
 @Composable
-internal fun CameraZoom(camera: Camera, preview: PreviewView, enabled: Boolean, modifier: Modifier = Modifier) {
+internal fun CameraZoom(camera: Camera, enabled: Boolean, modifier: Modifier = Modifier) {
     val owner = LocalLifecycleOwner.current
     val zoomState = camera.cameraInfo.zoomState
     var zoom by remember(camera) { mutableStateOf(zoomState.value) }
     var showPresets by remember(camera) { mutableStateOf(false) }
 
-    DisposableEffect(owner, camera, preview, enabled) {
+    DisposableEffect(owner, camera) {
         val observer = Observer<ZoomState> { zoom = it }
         zoomState.observe(owner, observer)
-        if (enabled) {
-            val detector = ScaleGestureDetector(preview.context, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
-                override fun onScale(detector: ScaleGestureDetector): Boolean {
-                    val state = zoomState.value ?: return false
-                    val ratio = (state.zoomRatio * detector.scaleFactor).coerceIn(state.minZoomRatio, state.maxZoomRatio)
-                    if (ratio != state.zoomRatio) camera.cameraControl.setZoomRatio(ratio)
-                    return true
-                }
-            }).apply { isQuickScaleEnabled = false }
-            preview.setOnTouchListener { _, event -> detector.onTouchEvent(event) }
-        }
-        onDispose {
-            if (enabled) preview.setOnTouchListener(null)
-            zoomState.removeObserver(observer)
-        }
+        onDispose { zoomState.removeObserver(observer) }
     }
 
     val current = zoom ?: return

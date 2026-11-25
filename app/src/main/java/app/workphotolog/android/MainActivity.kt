@@ -292,6 +292,7 @@ private fun CameraPage(model: WorkPhotoModel, project: Project?) {
     val status = model.recordingStatus
     val mode = model.captureMode
     val canConfigure = !model.captureLocked
+    val canZoom = canConfigure || (status != null && !model.recordingFinishing)
     val recentFlow = remember(project?.id) {
         project?.let { model.repository.recent(it.id).catch { emit(null) } } ?: flowOf(null)
     }
@@ -464,12 +465,14 @@ private fun CameraPage(model: WorkPhotoModel, project: Project?) {
 
         Box(
             modifier = Modifier.fillMaxWidth().weight(1f).clip(RoundedCornerShape(20.dp))
-                .background(Color(0xff22281d)),
+                .background(Color(0xff22281d))
+                .testTag("cameraViewfinder")
+                .cameraPinchZoom(session?.camera, canZoom),
             contentAlignment = Alignment.Center,
         ) {
             if (cameraGranted && !bindFailed) {
                 CameraPreview(
-                    retry, mode, frontFacing, Modifier.fillMaxSize().testTag("cameraViewfinder"),
+                    retry, mode, frontFacing, Modifier.fillMaxSize(),
                     onBound = { session = it },
                     onError = {
                         session = null
@@ -535,8 +538,7 @@ private fun CameraPage(model: WorkPhotoModel, project: Project?) {
                     }
                     CameraZoom(
                         camera = bound.camera,
-                        preview = bound.view,
-                        enabled = canConfigure || (status != null && !model.recordingFinishing),
+                        enabled = canZoom,
                         modifier = Modifier.align(Alignment.CenterEnd).padding(end = 8.dp),
                     )
                     if (status != null) {
