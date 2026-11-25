@@ -31,17 +31,5 @@ cargo test --locked --workspace
 
 Use `./gradlew` on Linux or macOS. Connect a test phone or boot an Android x86_64 emulator before running `:app:connectedDebugAndroidTest`. On a physical phone, also check real capture and orientation, approximate and denied GPS, share grants, and interruption during save.
 
-## Release
-
-Install the first updater-capable signed ARM64 release once from GitHub. After that, Sitefinch checks for newer published releases when opened. **Check for updates** in Settings also works after dismissing a version. Android asks you to allow installs from Sitefinch and confirm the update.
-
-For each release, increase both the numeric `versionCode` and stable `versionName` in `app/build.gradle.kts`, then publish the matching `vMAJOR.MINOR.PATCH` tag from `main`. Use the same signing key so Android can update the app in place.
-
-GitHub Actions checks the Rust core and Android app on pull requests. Tagged releases use a dedicated keystore in the protected `release` environment. Keep a backup of that keystore to sign future updates with the same identity.
-
-Use `gh auth login --hostname github.com --web` to connect your GitHub CLI and `gh api user --jq .login` to verify its active account. Browser authorization and signing credentials belong to the release owner. The workflow publishes the ARM64 APK and SHA-256 checksum. The release environment accepts version tags and stores the signing secrets named in the release workflow.
-
 ## References
-
-- [Timemark package investigation](docs/timemark-reference.md)
 - [Apache License 2.0](LICENSE)
