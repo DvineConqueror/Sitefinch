@@ -65,6 +65,8 @@ class WorkPhotoModel(private val app: Application) : AndroidViewModel(app) {
         private set
     var autoSaveToGallery by mutableStateOf(preferences.getBoolean("auto_save_to_gallery", true))
         private set
+    var includeCodeInGallery by mutableStateOf(preferences.getBoolean("include_code_in_gallery", false))
+        private set
     var stampTemplate by mutableStateOf(StampTemplate.fromJson(preferences.getString("stamp_template", null)))
         private set
     var stampLibrary by mutableStateOf(readStampLibrary())
@@ -118,6 +120,11 @@ class WorkPhotoModel(private val app: Application) : AndroidViewModel(app) {
     fun updateAutoSaveToGallery(enabled: Boolean) {
         autoSaveToGallery = enabled
         preferences.edit { putBoolean("auto_save_to_gallery", enabled) }
+    }
+
+    fun updateIncludeCodeInGallery(enabled: Boolean) {
+        includeCodeInGallery = enabled
+        preferences.edit { putBoolean("include_code_in_gallery", enabled) }
     }
 
     fun applyStampTemplate(template: StampTemplate) {
@@ -419,7 +426,8 @@ class WorkPhotoModel(private val app: Application) : AndroidViewModel(app) {
             try {
                 createStampedCopy(app, original, stampDetails(
                     projectName, photo.note, photo.takenAtMillis, photo.utcOffsetMinutes, photo.location, template,
-                    photoCode = photo.id, headingDegrees = photo.headingDegrees, map = map,
+                    photoCode = photo.id.takeIf { includeCodeInGallery },
+                    headingDegrees = photo.headingDegrees, map = map,
                 ))
             } finally {
                 map?.recycle()

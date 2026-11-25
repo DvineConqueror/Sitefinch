@@ -413,6 +413,7 @@ fun AlbumScreen(model: WorkPhotoModel, project: Project) {
 @Composable
 fun PhotoDetailsScreen(model: WorkPhotoModel, photo: Photo, project: Project?) {
     var includeLocation by rememberSaveable(photo.id) { mutableStateOf(false) }
+    var showLocalCode by rememberSaveable(photo.id) { mutableStateOf(false) }
     var editStamp by rememberSaveable(photo.id) { mutableStateOf(false) }
     var editMarks by rememberSaveable(photo.id) { mutableStateOf(false) }
     var marks by remember(photo.id) { mutableStateOf(emptyList<PhotoMark>()) }
@@ -431,7 +432,7 @@ fun PhotoDetailsScreen(model: WorkPhotoModel, photo: Photo, project: Project?) {
         stampDetails(
             projectName, photo.note, photo.takenAtMillis, photo.utcOffsetMinutes,
             photo.location.takeIf { includeLocation }, template,
-            photoCode = photo.id, logo = logo,
+            photoCode = photo.id.takeIf { showLocalCode }, logo = logo,
             headingDegrees = photo.headingDegrees,
             map = map.takeIf { includeLocation },
         )
@@ -464,8 +465,12 @@ fun PhotoDetailsScreen(model: WorkPhotoModel, photo: Photo, project: Project?) {
         photo.location?.let { Text(displayLocation(it), color = MaterialTheme.colorScheme.onSurfaceVariant) }
         if (photo.note.isNotBlank()) Text(photo.note)
         HorizontalDivider()
-        Text(if (photo.isVideo) "Clip ID" else "Photo ID", style = MaterialTheme.typography.labelMedium)
-        Text(photo.id, style = MaterialTheme.typography.bodyMedium)
+        ToggleRow(
+            if (photo.isVideo) "Show clip ID" else "Show local photo code",
+            if (stamp != null && template.showPhotoCode) "Also shows the code on the stamped copy." else null,
+            showLocalCode, { showLocalCode = it },
+        )
+        if (showLocalCode) Text(photo.id, style = MaterialTheme.typography.bodyMedium)
         OutlinedButton(onClick = { model.checkIntegrity(photo) }, enabled = !model.busy) { Text("Check original file") }
         model.integrityResult?.let { matches ->
             Text(
@@ -518,7 +523,8 @@ fun PhotoDetailsScreen(model: WorkPhotoModel, photo: Photo, project: Project?) {
             onSaveTemplate = model::saveStamp,
             onDeleteTemplate = model::deleteStamp,
             preview = StampPreview(
-                image, projectName, photo.note, photo.takenAtMillis, photo.utcOffsetMinutes, photo.location, photo.id,
+                image, projectName, photo.note, photo.takenAtMillis, photo.utcOffsetMinutes, photo.location,
+                photoCode = photo.id.takeIf { showLocalCode },
                 headingDegrees = photo.headingDegrees,
                 recordedAddress = recordedTemplate.recordedAddress,
             ),

@@ -113,6 +113,12 @@ internal fun SitefinchSettings(model: WorkPhotoModel, visible: Boolean, onClose:
                         model.autoSaveToGallery,
                         model::updateAutoSaveToGallery,
                     )
+                    ToggleRow(
+                        "Include local code on Gallery copies",
+                        "Shows the local photo code when the stamp template includes it.",
+                        model.includeCodeInGallery,
+                        model::updateIncludeCodeInGallery,
+                    )
                     HorizontalDivider()
                     Text("Library backup", style = MaterialTheme.typography.titleMedium)
                     Text("Save your projects, captures and styles to a ZIP. Restore merges them into this library.",

@@ -74,7 +74,7 @@ class MainActivitySmokeTest {
 
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val repository = PhotoRepository(context)
-        runBlocking {
+        val photo = runBlocking {
             val project = withTimeout(10_000) { repository.projects.first { rows -> rows.any { it.name == name } } }
                 .first { it.name == name }
             val fixture = repository.newCaptureFile()
@@ -94,6 +94,12 @@ class MainActivitySmokeTest {
         waitForText("Inspected roof flashing")
         compose.onNodeWithText("Inspected roof flashing").performClick()
         compose.onNodeWithText("Photo details").assertIsDisplayed()
+        compose.onNodeWithText(photo.id).assertDoesNotExist()
+        val codeToggle = compose.onNodeWithText("Show local photo code")
+        codeToggle.performScrollTo().performClick()
+        compose.onNodeWithText(photo.id).performScrollTo().assertIsDisplayed()
+        codeToggle.performScrollTo().performClick()
+        compose.onNodeWithText(photo.id).assertDoesNotExist()
         captureScreenshot("smoke-photo.png")
         compose.onNodeWithText("Check original file").performScrollTo().performClick()
         waitForText("Original matches its saved SHA-256 hash.")
@@ -165,6 +171,9 @@ class MainActivitySmokeTest {
         createProject(name)
         compose.onNodeWithTag("templates").performClick()
         compose.onNodeWithTag("templateClock").performScrollTo().performClick()
+        compose.onNodeWithTag("editTemplate").performClick()
+        compose.onNodeWithTag("stampCaptureFields").performScrollTo().performClick()
+        compose.onNodeWithTag("stampShowPhotoCode").performScrollTo().performClick()
         compose.onNodeWithTag("applyTemplate").performClick()
         try {
             waitForShutter()
@@ -184,10 +193,11 @@ class MainActivitySmokeTest {
                 val original = repository.originalFile(photo)
                 val template = StampTemplate.fromJson(photo.stampJson)
                 assertEquals(StampLayout.CLOCK, template.layout)
+                assertTrue(template.showPhotoCode)
                 val gallery = GalleryPhotos(context)
                 val uri = checkNotNull(gallery.find(photo, stamped = true))
                 val expected = createStampedCopy(context, original, stampDetails(
-                    name, photo.note, photo.takenAtMillis, photo.utcOffsetMinutes, photo.location, template, photoCode = photo.id,
+                    name, photo.note, photo.takenAtMillis, photo.utcOffsetMinutes, photo.location, template,
                 ))
                 try {
                     val galleryBytes = checkNotNull(context.contentResolver.openInputStream(uri)).use { it.readBytes() }

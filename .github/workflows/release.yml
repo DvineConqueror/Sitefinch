@@ -33,6 +33,7 @@ jobs:
         run: |
           [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
           git merge-base --is-ancestor HEAD origin/main
+          grep -Eq '^-[[:blank:]]+[^[:space:]]' "release-notes/$GITHUB_REF_NAME.md"
       - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
         with:
           distribution: temurin
@@ -104,4 +105,4 @@ jobs:
           artifact="sitefinch-$GITHUB_REF_NAME-arm64-v8a.apk"
           gh release create "$GITHUB_REF_NAME" \
             "release/$artifact" "release/$artifact.sha256" \
-            --verify-tag --generate-notes --title "Sitefinch $GITHUB_REF_NAME"
+            --verify-tag --notes-file "release-notes/$GITHUB_REF_NAME.md" --title "Sitefinch $GITHUB_REF_NAME"
