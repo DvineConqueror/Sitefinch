@@ -190,6 +190,7 @@ private suspend fun <T> readGitHub(
         }
         val connection = url.openConnection() as HttpsURLConnection
         try {
+            connection.useCaches = false
             connection.instanceFollowRedirects = false
             connection.connectTimeout = 10_000
             connection.readTimeout = 20_000

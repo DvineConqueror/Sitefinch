@@ -29,6 +29,20 @@ internal data class StarterTemplate(
 
 internal val starterTemplates = listOf(
     StarterTemplate("Clean photo", "Capture without a stamp", "templateClean", StampTemplate()),
+    StarterTemplate(
+        "Blank canvas", "Build a template from scratch", "templateBlank",
+        StampTemplate(
+            preset = StampPreset.FIELD_NOTE,
+            heading = "Blank canvas",
+            layout = StampLayout.PLAIN,
+            background = StampBackground.NONE,
+            showTime = false,
+            showNote = false,
+            showTitle = false,
+            showAddress = false,
+            layerEditing = true,
+        ),
+    ),
     StarterTemplate("Field note", "Record an observation", "templateFieldNote", StampTemplate.DEFAULT_COPY),
     StarterTemplate(
         "Time & place", "Show time and address", "templateClock",

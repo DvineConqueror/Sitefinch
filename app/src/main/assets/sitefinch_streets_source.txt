@@ -1,0 +1,16 @@
+© OpenStreetMap contributors. https://www.openstreetmap.org/copyright
+
+sitefinch_streets.bin is a gzip-compressed, adapted OpenStreetMap database, licensed under the Open Data Commons Open Database License v1.0 (ODbL): https://opendatacommons.org/licenses/odbl/1-0/
+
+Street and waterway centerlines cover a 0.15° × 0.10° area in Pangasinan, Philippines, including Dagupan and Mangaldan. The app source includes the adapted database in this folder. The maps embedded in photos and videos include visible attribution.
+
+Source extracts from the OpenStreetMap map API, listed in packing order:
+
+- https://api.openstreetmap.org/api/0.6/map?bbox=120.40,16.05,120.45,16.10
+- https://api.openstreetmap.org/api/0.6/map?bbox=120.40,16.00,120.45,16.05
+- https://api.openstreetmap.org/api/0.6/map?bbox=120.35,16.05,120.40,16.10
+- https://api.openstreetmap.org/api/0.6/map?bbox=120.30,16.05,120.35,16.10
+- https://api.openstreetmap.org/api/0.6/map?bbox=120.35,16.00,120.40,16.05
+- https://api.openstreetmap.org/api/0.6/map?bbox=120.30,16.00,120.35,16.05
+
+To refresh the database, download those bounding boxes in order and pass the saved XML extracts to scripts/build_street_map.py, following the path of the output asset. The script filters selected road classes and waterways, deduplicates ways by OpenStreetMap ID, and stores the selected names and geometry rounded to 0.00001°. Data is a snapshot and does not require a network connection at runtime.

@@ -188,7 +188,9 @@ fun ReviewScreen(model: WorkPhotoModel, draft: CaptureDraft, project: Project?) 
     var stampLocation by rememberSaveable(draft.file.absolutePath) { mutableStateOf(configured.usesRecordedLocation) }
     var editStamp by rememberSaveable { mutableStateOf(false) }
     val template = if (configured.preset == null) StampTemplate.DEFAULT_COPY else configured
-    val map = rememberStampMap(editStamp || (previewStamp && stampLocation && template.showMap), draft.location)
+    val map = rememberStampMap(
+        previewStamp && stampLocation && template.showMap, draft.location, template.mapZoom, template.onlineMap,
+    )
     val stamp = stampDetails(
         project?.name ?: "Project", draft.note, draft.takenAtMillis, draft.utcOffsetMinutes,
         draft.location.takeIf { stampLocation }, template,
@@ -291,7 +293,7 @@ fun ReviewScreen(model: WorkPhotoModel, draft: CaptureDraft, project: Project?) 
             onDeleteTemplate = model::deleteStamp,
             preview = StampPreview(
                 image, project?.name ?: "Project", draft.note, draft.takenAtMillis, draft.utcOffsetMinutes, draft.location,
-                headingDegrees = draft.headingDegrees, map = map,
+                headingDegrees = draft.headingDegrees,
                 recordedAddress = configured.recordedAddress,
             ),
         )
@@ -422,7 +424,9 @@ fun PhotoDetailsScreen(model: WorkPhotoModel, photo: Photo, project: Project?) {
     val template = remember(copyStampJson) { StampTemplate.fromJson(copyStampJson) }
     val projectName = project?.name ?: "Project"
     val logo = rememberStampLogo(template.logoId.takeIf { template.showLogo })
-    val map = rememberStampMap(editStamp || (showStamp && includeLocation && template.showMap), photo.location)
+    val map = rememberStampMap(
+        showStamp && includeLocation && template.showMap, photo.location, template.mapZoom, template.onlineMap,
+    )
     val stamp = if (showStamp && template.preset != null) {
         stampDetails(
             projectName, photo.note, photo.takenAtMillis, photo.utcOffsetMinutes,
@@ -515,7 +519,7 @@ fun PhotoDetailsScreen(model: WorkPhotoModel, photo: Photo, project: Project?) {
             onDeleteTemplate = model::deleteStamp,
             preview = StampPreview(
                 image, projectName, photo.note, photo.takenAtMillis, photo.utcOffsetMinutes, photo.location, photo.id,
-                headingDegrees = photo.headingDegrees, map = map,
+                headingDegrees = photo.headingDegrees,
                 recordedAddress = recordedTemplate.recordedAddress,
             ),
         )
@@ -555,13 +559,13 @@ internal val StampTemplate.usesRecordedLocation: Boolean
     get() = showCoordinates || showMap || showAltitude || (showAddress && recordedAddress.isNotEmpty())
 
 @Composable
-internal fun rememberStampMap(enabled: Boolean, fix: LocationFix?): android.graphics.Bitmap? {
+internal fun rememberStampMap(enabled: Boolean, fix: LocationFix?, zoom: Float, online: Boolean): android.graphics.Bitmap? {
     if (!enabled || fix == null) return null
     val context = LocalContext.current
-    val map by produceState<Pair<LocationFix, android.graphics.Bitmap?>?>(null, fix) {
-        value = fix to renderStampMap(context, fix)
+    val map by produceState<Pair<Pair<LocationFix, Boolean>, android.graphics.Bitmap?>?>(null, fix, zoom, online) {
+        value = (fix to online) to renderStampMap(context, fix, zoom, online)
     }
-    return map?.takeIf { it.first == fix }?.second
+    return map?.takeIf { it.first == (fix to online) }?.second
 }
 
 @Composable

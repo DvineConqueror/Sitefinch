@@ -295,10 +295,12 @@ fun drawStamp(
     val fontFamily = template.typography.family?.let { Typeface.create(it, Typeface.NORMAL) } ?: Typeface.DEFAULT
     val logo = details.logo?.takeIf { template.showLogo && !it.isRecycled }
     val map = details.map?.takeIf { template.showMap && !it.isRecycled }
+    val logoStyle = template.styleFor(StampGroup.LOGO).bounded()
+    val mapStyle = template.styleFor(StampGroup.MAP).bounded()
     val mapAspect = if (map != null) map.width.toFloat() / map.height else 1f
-    val mapHeight = if (map != null) minOf(font * 6.8f, contentWidth / mapAspect) else 0f
+    val mapHeight = if (map != null) minOf(font * 6.8f * mapStyle.scale, contentWidth / mapAspect) else 0f
     val mapWidth = mapHeight * mapAspect
-    val logoEdge = if (logo != null) minOf(font * 3.15f, contentWidth * 0.26f) else 0f
+    val logoEdge = if (logo != null) minOf(font * 3.15f * logoStyle.scale, contentWidth * 0.26f * logoStyle.scale) else 0f
     val logoSpace = if (logo != null) logoEdge + padding else 0f
     val headerWidth = (contentWidth - logoSpace).roundToInt().coerceAtLeast(1)
 
@@ -312,17 +314,25 @@ fun drawStamp(
         clockDigits: Boolean = false,
         group: StampGroup = StampGroup.DETAILS,
     ): StampLine {
+        val style = template.styleFor(group).bounded()
+        val layerColor = style.colorArgb?.opaque() ?: color
+        val layerFontFamily = style.typography?.let { typography ->
+            typography.family?.let { Typeface.create(it, Typeface.NORMAL) } ?: Typeface.DEFAULT
+        } ?: fontFamily
         val paint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-            this.color = color
-            textSize = size
-            typeface = Typeface.create(fontFamily, weight, false)
+            this.color = layerColor.withStampOpacity(style.opacity)
+            textSize = size * style.scale
+            typeface = Typeface.create(layerFontFamily, weight, false)
             if (clockDigits) {
                 fontFeatureSettings = "'tnum'"
                 val measured = measureText(text)
                 if (measured > lineWidth) textSize *= lineWidth / measured * 0.98f
             }
             if (transparentBackground) {
-                setShadowLayer((font * 0.18f).coerceAtLeast(1f), 0f, font * 0.045f, 0xff101411.toInt())
+                setShadowLayer(
+                    (font * 0.18f).coerceAtLeast(1f), 0f, font * 0.045f,
+                    0xff101411.toInt().withStampOpacity(style.opacity),
+                )
             }
         }
         return StampLine(
@@ -340,15 +350,18 @@ fun drawStamp(
     val title = field(template.heading, template.showTitle)
     val heading = if (template.showTitle) title.ifEmpty { preset.label } else ""
     val organization = field(template.organization, template.showCompany)
-    val employee = field(template.employeeNumber, template.showEmployeeNumber)
+    val employeeName = field(template.worker, template.showEmployeeName)
+    val employeeNumber = field(template.employeeNumber, template.showEmployeeNumber)
         .takeIf { it.isNotEmpty() }?.let { "ID $it" }.orEmpty()
-    val worker = joinStampText(field(template.worker, template.showEmployeeName), employee)
+    val worker = joinStampText(employeeName, employeeNumber)
     val site = field(template.site, template.showSite)
     val address = field(details.address, template.showAddress)
-    val project = field(details.project, template.showTitle)
-    val highlight = if (preset == StampPreset.SITE_VISIT && site.isNotBlank()) site else project
+    val project = field(details.project, template.projectVisible)
+    val highlightsSite = preset == StampPreset.SITE_VISIT && site.isNotBlank()
+    val highlight = if (highlightsSite) site else project
     val clockTime = details.clockTime?.takeIf { template.usesLargeClock && template.showTime && it.isNotBlank() }
     val timeFirst = clockLayout || clockTime != null
+    fun layer(group: StampGroup) = if (template.layerEditing) group else StampGroup.DETAILS
     val context = if (timeFirst) joinStampText(organization, worker) else when (preset) {
         StampPreset.FIELD_NOTE -> joinStampText(organization, site, worker)
         StampPreset.SITE_VISIT -> joinStampText(project.takeUnless { it == highlight }.orEmpty(), organization, worker)
@@ -364,10 +377,13 @@ fun drawStamp(
                 lineWidth = headerWidth, group = StampGroup.CLOCK))
         } else {
             if (heading.isNotBlank()) {
-                add(line(heading, font * 0.88f, accent, weight = 700, lineWidth = headerWidth))
+                add(line(heading, font * 0.88f, accent, weight = 700, lineWidth = headerWidth,
+                    group = layer(StampGroup.TITLE)))
             }
             if (highlight.isNotBlank()) {
-                add(line(highlight, font * 1.26f, textColor, weight = 700, lineWidth = headerWidth))
+                val group = if (highlightsSite) StampGroup.SITE else StampGroup.PROJECT
+                add(line(highlight, font * 1.26f, textColor, weight = 700, lineWidth = headerWidth,
+                    group = layer(group)))
             }
         }
     }
@@ -377,25 +393,44 @@ fun drawStamp(
                 add(line(details.time, clockFont, secondaryTextColor, group = StampGroup.CLOCK))
             }
         }
-        if (timeFirst) {
-            if (clockTime == null) addTime()
-            val place = joinStampText(
-                site.takeUnless { clockTime == null && it == highlight }.orEmpty(),
-                address,
-            )
-            val subject = if (clockTime != null) joinStampText(title, project)
-                else project.takeUnless { it == highlight }.orEmpty()
-            if (place.isNotBlank()) add(line(place, font * 0.94f, textColor, weight = 600, lines = 2))
-            if (subject.isNotBlank()) add(line(subject, font, secondaryTextColor, lines = 2))
-        } else if (template.layout == StampLayout.LEDGER) {
-            addTime()
+        if (template.layerEditing) {
+            fun addField(group: StampGroup, text: String, color: Int = secondaryTextColor, weight: Int = 400) {
+                if (text.isNotBlank()) add(line(text, font, color, weight = weight, lines = 2, group = group))
+            }
+            if (timeFirst || template.layout == StampLayout.LEDGER) {
+                if (clockTime == null) addTime()
+            }
+            if (clockTime != null) addField(StampGroup.TITLE, heading, accent, weight = 700)
+            if (clockTime != null || highlightsSite) addField(StampGroup.PROJECT, project)
+            addField(StampGroup.COMPANY, organization)
+            addField(StampGroup.EMPLOYEE, employeeName)
+            addField(StampGroup.EMPLOYEE_NUMBER, employeeNumber)
+            if (clockTime != null || !highlightsSite) addField(StampGroup.SITE, site)
+            addField(StampGroup.ADDRESS, address)
+            if (!timeFirst && template.layout != StampLayout.LEDGER) addTime()
+        } else {
+            if (timeFirst) {
+                if (clockTime == null) addTime()
+                val place = joinStampText(
+                    site.takeUnless { clockTime == null && it == highlight }.orEmpty(),
+                    address,
+                )
+                val subject = if (clockTime != null) joinStampText(title, project)
+                    else project.takeUnless { it == highlight }.orEmpty()
+                if (place.isNotBlank()) add(line(place, font * 0.94f, textColor, weight = 600, lines = 2))
+                if (subject.isNotBlank()) add(line(subject, font, secondaryTextColor, lines = 2))
+            } else if (template.layout == StampLayout.LEDGER) {
+                addTime()
+            }
+            if (context.isNotBlank()) add(line(context, font, secondaryTextColor, lines = 2))
+            if (template.layout != StampLayout.LEDGER && !timeFirst) addTime()
+            if (!timeFirst && address.isNotBlank()) {
+                add(line("Address · $address", font, secondaryTextColor, lines = 2))
+            }
         }
-        if (context.isNotBlank()) add(line(context, font, secondaryTextColor, lines = 2))
-        if (template.layout != StampLayout.LEDGER && !timeFirst) addTime()
-        if (!timeFirst && address.isNotBlank()) {
-            add(line("Address · $address", font, secondaryTextColor, lines = 2))
+        if (template.showCoordinates) details.location?.let {
+            add(line(it, font, secondaryTextColor, group = layer(StampGroup.COORDINATES)))
         }
-        if (template.showCoordinates) details.location?.let { add(line(it, font, secondaryTextColor)) }
         val altitude = details.altitudeMeters?.takeIf { template.showAltitude && it.isFinite() }
             ?.let { String.format(Locale.getDefault(), "Altitude · %,.0f m", it) }.orEmpty()
         val compass = details.headingDegrees?.takeIf { template.showCompass && it.isFinite() }
@@ -403,31 +438,42 @@ fun drawStamp(
                 val angle = ((it % 360 + 360) % 360).roundToInt() % 360
                 "Compass · ${angle}° magnetic"
             }.orEmpty()
-        val instruments = joinStampText(altitude, compass)
-        if (instruments.isNotBlank()) add(line(instruments, font, secondaryTextColor, lines = 2))
+        if (template.layerEditing) {
+            if (altitude.isNotBlank()) add(line(altitude, font, secondaryTextColor, group = StampGroup.ALTITUDE))
+            if (compass.isNotBlank()) add(line(compass, font, secondaryTextColor, group = StampGroup.COMPASS))
+        } else {
+            val instruments = joinStampText(altitude, compass)
+            if (instruments.isNotBlank()) add(line(instruments, font, secondaryTextColor, lines = 2))
+        }
         val weather = field(template.weather, template.showWeather)
-        if (weather.isNotBlank()) add(line("Weather (manual) · $weather", font, secondaryTextColor, lines = 2))
+        if (weather.isNotBlank()) {
+            add(line("Weather (manual) · $weather", font, secondaryTextColor, lines = 2, group = layer(StampGroup.WEATHER)))
+        }
         val tags = field(template.tags, template.showTags)
-        if (tags.isNotBlank()) add(line("Tags · $tags", font, secondaryTextColor, lines = 2))
+        if (tags.isNotBlank()) {
+            add(line("Tags · $tags", font, secondaryTextColor, lines = 2, group = layer(StampGroup.TAGS)))
+        }
         val note = field(details.note, template.showNote)
-        if (note.isNotBlank()) add(line(note, font, textColor, lines = 2))
+        if (note.isNotBlank()) add(line(note, font, textColor, lines = 2, group = layer(StampGroup.NOTE)))
         val styledNote = field(template.styledNote, template.showStyledNote)
         if (styledNote.isNotBlank()) {
+            val group = layer(StampGroup.STYLED_NOTE)
             add(when (template.styledNoteStyle) {
-                StampNoteStyle.PLAIN -> line(styledNote, font, textColor, lines = 2)
-                StampNoteStyle.HIGHLIGHT -> line(styledNote, font, accent, weight = 700, lines = 2)
-                StampNoteStyle.ALERT -> line("Alert · $styledNote", font, 0xffffbdad.toInt(), weight = 700, lines = 2)
+                StampNoteStyle.PLAIN -> line(styledNote, font, textColor, lines = 2, group = group)
+                StampNoteStyle.HIGHLIGHT -> line(styledNote, font, accent, weight = 700, lines = 2, group = group)
+                StampNoteStyle.ALERT -> line("Alert · $styledNote", font, 0xffffbdad.toInt(), weight = 700, lines = 2, group = group)
             })
         }
         if (template.showBusinessCard) {
             val name = field(template.businessCardName, true)
             val contact = joinStampText(field(template.businessCardRole, true), field(template.businessCardContact, true))
-            if (name.isNotBlank()) add(line(name, font, textColor, weight = 700))
-            if (contact.isNotBlank()) add(line(contact, font, secondaryTextColor, lines = 2))
+            val group = layer(StampGroup.CONTACT)
+            if (name.isNotBlank()) add(line(name, font, textColor, weight = 700, group = group))
+            if (contact.isNotBlank()) add(line(contact, font, secondaryTextColor, lines = 2, group = group))
         }
         if (template.showPhotoCode) {
             details.photoCode?.takeIf { it.isNotBlank() }?.boundedStampText()?.let {
-                add(line("Local code · $it", font * 0.84f, secondaryTextColor, lines = 2))
+                add(line("Local code · $it", font * 0.84f, secondaryTextColor, lines = 2, group = layer(StampGroup.PHOTO_CODE)))
             }
         }
     }
@@ -474,11 +520,20 @@ fun drawStamp(
         groups.getOrPut(group) { RectF(fitted) }.union(fitted)
     }
     logoRect?.let { include(StampGroup.LOGO, it) }
-    mapRect?.let { include(StampGroup.DETAILS, it) }
+    mapRect?.let { include(StampGroup.MAP, it) }
     for (row in stampRows) include(row.line.group, row.bounds)
 
+    val legacyDetailsBounds = if (!template.layerEditing && !template.layerOffsets.containsKey(StampGroup.MAP)) {
+        groups[StampGroup.DETAILS]?.let { detailsBounds ->
+            groups[StampGroup.MAP]?.let { mapBounds -> RectF(detailsBounds).apply { union(mapBounds) } }
+        }
+    } else null
     val groupMoves = groups.mapValues { (group, rect) ->
-        template.offsetFor(group).toPixels(width, height).clampToFrame(rect, width, height)
+        val clampBounds = when (group) {
+            StampGroup.DETAILS, StampGroup.MAP -> legacyDetailsBounds ?: rect
+            else -> rect
+        }
+        template.offsetFor(group).toPixels(width, height).clampToFrame(clampBounds, width, height)
     }
     val panel = if (background != null) card.stampFit(fit, anchorX, anchorY) else null
     val whole = RectF()
@@ -540,7 +595,7 @@ fun drawStamp(
             if (logo != null && logoRect != null) {
                 val move = groupMoves.getValue(StampGroup.LOGO)
                 withTranslation(move.x / fit, move.y / fit) {
-                    paint.alpha = 255
+                    paint.alpha = (255 * logoStyle.opacity).roundToInt()
                     drawStampLogo(this, logo, template.logoZoom, template.logoShape, logoRect, paint)
                 }
             }
@@ -556,9 +611,9 @@ fun drawStamp(
                 }
             }
             if (map != null && mapRect != null) {
-                val move = groupMoves.getValue(StampGroup.DETAILS)
+                val move = groupMoves.getValue(StampGroup.MAP)
                 withTranslation(move.x / fit, move.y / fit) {
-                    paint.alpha = 255
+                    paint.alpha = (255 * mapStyle.opacity).roundToInt()
                     drawBitmap(map, null, mapRect, paint)
                 }
             }
@@ -621,6 +676,7 @@ private fun Float.clampStampDelta(minimum: Float, maximum: Float): Float =
 
 private fun Int.opaque(): Int = this or 0xff000000.toInt()
 private fun Int.withStampAlpha(alpha: Int): Int = (this and 0x00ffffff) or (alpha shl 24)
+private fun Int.withStampOpacity(opacity: Float): Int = withStampAlpha((Color.alpha(this) * opacity).roundToInt())
 
 fun Context.shareFile(request: ShareRequest) {
     val uri = FileProvider.getUriForFile(this, "$packageName.files", request.file)

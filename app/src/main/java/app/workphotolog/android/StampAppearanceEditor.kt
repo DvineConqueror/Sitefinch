@@ -2,6 +2,8 @@ package app.workphotolog.android
 
 import android.graphics.Bitmap
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,6 +20,7 @@ import androidx.compose.material.icons.outlined.ArrowUpward
 import androidx.compose.material.icons.outlined.KeyboardArrowLeft
 import androidx.compose.material.icons.outlined.KeyboardArrowRight
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -56,15 +59,16 @@ internal fun StampPlacementControls(
     onChange: (StampTemplate) -> Unit,
 ) {
     StudioHeading("Position on photo")
-    Text(
-        "Choose a group, then drag its outline or use the arrows.",
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
-    ChoiceChips(
-        StampGroup.entries, group, StampGroup::displayLabel, { "stampDragGroup" + it.name },
-        enabled = { it in available }, onSelect = onSelect,
-    )
+    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        StampGroup.entries.filter { it in available }.forEach { layer ->
+            FilterChip(
+                selected = layer == group,
+                onClick = { onSelect(layer) },
+                label = { Text(layer.label) },
+                modifier = Modifier.testTag("stampDragGroup" + layer.name),
+            )
+        }
+    }
     val offset = template.offsetFor(group)
     fun shift(x: Float, y: Float) {
         placement.nudge(group, x, y)?.let { onChange(template.withOffset(group, it)) }
@@ -83,21 +87,14 @@ internal fun StampPlacementControls(
             Icon(Icons.Outlined.KeyboardArrowRight, contentDescription = "Move right")
         }
         TextButton(
-            onClick = { onChange(template.withOffset(group, StampOffset())) },
-            enabled = offset != StampOffset(),
+            onClick = { onChange(template.withOffset(group, template.defaultOffsetFor(group))) },
+            enabled = offset != template.defaultOffsetFor(group),
             modifier = Modifier.weight(1f).testTag("stampResetPosition"),
         ) { Text("Reset") }
     }
 }
 
 private const val PLACEMENT_STEP = 0.025f
-private val StampGroup.displayLabel: String
-    get() = when (this) {
-        StampGroup.WHOLE -> "Whole stamp"
-        StampGroup.LOGO -> "Logo"
-        StampGroup.CLOCK -> "Clock"
-        StampGroup.DETAILS -> "Details"
-    }
 
 @Composable
 internal fun StampAppearanceEditor(
@@ -194,7 +191,7 @@ internal fun StampAppearanceEditor(
 }
 
 @Composable
-private fun StampPercentSlider(
+internal fun StampPercentSlider(
     label: String,
     value: Float,
     range: ClosedFloatingPointRange<Float>,

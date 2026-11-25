@@ -22,14 +22,23 @@ private val outlinesLock = Any()
 @Volatile
 private var cachedOutlines: List<MapOutline>? = null
 
-internal suspend fun renderStampMap(context: Context, fix: LocationFix?): Bitmap? {
+internal suspend fun renderStampMap(
+    context: Context,
+    fix: LocationFix?,
+    zoom: Float = 1f,
+    online: Boolean = false,
+): Bitmap? {
     if (fix == null || fix.latitude !in -90.0..90.0 || fix.longitude !in -180.0..180.0) return null
+    val mapZoom = zoom.takeIf { it.isFinite() }?.coerceIn(0.6f, 2f) ?: 1f
+    renderStreetMap(context.applicationContext, fix, mapZoom)?.let { return it }
+    if (online) renderOnlineStreetMap(context.applicationContext, fix, mapZoom)?.let { return it }
     val outlines = cachedOutlines ?: withContext(Dispatchers.IO) { loadOutlines(context.applicationContext) }
     if (outlines.isEmpty()) return null
 
     return withContext(Dispatchers.Default) {
-        val frames = mapWidths.map { MapFrame(fix.latitude, fix.longitude, it) }
-        val frame = frames.firstOrNull { it.hasVisibleOutline(outlines) } ?: frames.last()
+        val width = mapWidths.firstOrNull { MapFrame(fix.latitude, fix.longitude, it).hasVisibleOutline(outlines) }
+            ?: mapWidths.last()
+        val frame = MapFrame(fix.latitude, fix.longitude, (width / mapZoom).toInt())
         Bitmap.createBitmap(mapWidth, mapHeight, Bitmap.Config.ARGB_8888).also { bitmap ->
             drawMap(Canvas(bitmap), frame, outlines)
         }

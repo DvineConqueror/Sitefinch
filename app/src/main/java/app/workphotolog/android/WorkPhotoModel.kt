@@ -300,7 +300,7 @@ class WorkPhotoModel(private val app: Application) : AndroidViewModel(app) {
                     stampDetails(target.name, note, instant.toEpochMilli(), offset, fix, selected,
                         logo = if (selected.showLogo) StampLogoStore(app).loadLogo(selected.logoId) else null,
                         headingDegrees = headingDegrees,
-                        map = if (selected.showMap) renderStampMap(app, fix) else null,
+                        map = if (selected.showMap) renderStampMap(app, fix, selected.mapZoom, selected.onlineMap) else null,
                     )
                 }
                 val output = withContext(Dispatchers.IO) { repository.newCaptureFile(isVideo = true) }
@@ -414,7 +414,7 @@ class WorkPhotoModel(private val app: Application) : AndroidViewModel(app) {
     private suspend fun prepareCaptureCopy(photo: Photo, projectName: String, template: StampTemplate): File {
         val original = repository.originalFile(photo)
         if (template.preset == null) return original
-        val map = if (template.showMap) renderStampMap(app, photo.location) else null
+        val map = if (template.showMap) renderStampMap(app, photo.location, template.mapZoom, template.onlineMap) else null
         return withContext(Dispatchers.IO) {
             try {
                 createStampedCopy(app, original, stampDetails(

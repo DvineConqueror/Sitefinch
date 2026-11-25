@@ -14,7 +14,7 @@ Android camera for documenting work by project. Capture photos and clips offline
 
 Every stamp control is available without a subscription. Media carries no Sitefinch watermark. Records and saved styles live on this device. Open **Sitefinch settings → Library backup** to create a ZIP in a folder you choose. Restore merges its projects, originals, and saved styles into the current library. Keep a copy outside the device if you need to recover after losing it. The ZIP includes recorded location and is unencrypted.
 
-Map, coordinates, and altitude use the recorded location when available. The map is an offline regional locator. Compass uses the device’s magnetic heading. Weather is entered manually.
+Map, coordinates, and altitude use the recorded location when available. Street maps are available online from [OpenStreetMap](https://www.openstreetmap.org/copyright), with bundled street detail around Dagupan and Mangaldan and a regional map for offline use elsewhere. OpenStreetMap receives tile requests for the displayed area. To keep map rendering offline, turn off **Online street maps** in the template's **Capture details**. Compass uses the device’s magnetic heading. Weather is entered manually.
 
 ## Build and check
 

@@ -66,7 +66,22 @@ enum class StampTypography(val label: String, internal val family: String?) {
     MONO("Mono", "monospace"),
 }
 
-enum class StampGroup { WHOLE, LOGO, CLOCK, DETAILS }
+enum class StampGroup(val label: String) {
+    WHOLE("Whole stamp"), LOGO("Logo"), CLOCK("Clock"), DETAILS("Details"), MAP("Map"),
+    TITLE("Title"), PROJECT("Project"), COMPANY("Company"), EMPLOYEE("Employee"), EMPLOYEE_NUMBER("Employee number"), SITE("Site"),
+    ADDRESS("Address"), COORDINATES("Coordinates"), ALTITUDE("Altitude"), COMPASS("Compass"),
+    WEATHER("Weather"), TAGS("Tags"), NOTE("Capture note"), STYLED_NOTE("Custom text"),
+    CONTACT("Contact card"), PHOTO_CODE("Photo code"),
+}
+
+data class StampLayerStyle(
+    val scale: Float = 1f,
+    val opacity: Float = 1f,
+    val colorArgb: Int? = null,
+    val typography: StampTypography? = null,
+) {
+    internal fun bounded() = copy(scale = scale.boundedStampValue(0.5f, 2f), opacity = opacity.boundedStampValue(0f, 1f))
+}
 
 data class StampOffset(val x: Float = 0f, val y: Float = 0f) {
     internal fun bounded() = StampOffset(
@@ -134,6 +149,12 @@ data class StampTemplate(
     val detailsOffset: StampOffset = StampOffset(),
     val addressParts: Set<AddressPart> = defaultAddressParts,
     val recordedAddress: Map<AddressPart, String> = emptyMap(),
+    val layerEditing: Boolean = false,
+    val layerOffsets: Map<StampGroup, StampOffset> = emptyMap(),
+    val layerStyles: Map<StampGroup, StampLayerStyle> = emptyMap(),
+    val mapZoom: Float = 1f,
+    val showProject: Boolean? = null,
+    val onlineMap: Boolean = true,
 ) {
     val displayName: String?
         get() = preset?.let { heading.ifBlank { it.label } }
@@ -141,11 +162,19 @@ data class StampTemplate(
     val usesLargeClock: Boolean
         get() = largeClock ?: (layout == StampLayout.CLOCK)
 
+    val projectVisible: Boolean get() = showProject ?: showTitle
+
     fun offsetFor(group: StampGroup): StampOffset = when (group) {
         StampGroup.WHOLE -> stampOffset
         StampGroup.LOGO -> logoOffset
         StampGroup.CLOCK -> clockOffset
         StampGroup.DETAILS -> detailsOffset
+        else -> layerOffsets[group] ?: defaultOffsetFor(group)
+    }
+
+    internal fun defaultOffsetFor(group: StampGroup): StampOffset = when (group) {
+        StampGroup.WHOLE, StampGroup.LOGO, StampGroup.CLOCK, StampGroup.DETAILS -> StampOffset()
+        else -> detailsOffset
     }
 
     fun withOffset(group: StampGroup, offset: StampOffset): StampTemplate {
@@ -155,7 +184,15 @@ data class StampTemplate(
             StampGroup.LOGO -> copy(logoOffset = bounded)
             StampGroup.CLOCK -> copy(clockOffset = bounded)
             StampGroup.DETAILS -> copy(detailsOffset = bounded)
+            else -> copy(layerOffsets = if (bounded == detailsOffset) layerOffsets - group else layerOffsets + (group to bounded))
         }
+    }
+
+    fun styleFor(group: StampGroup): StampLayerStyle = layerStyles[group] ?: StampLayerStyle()
+
+    fun withLayerStyle(group: StampGroup, style: StampLayerStyle): StampTemplate {
+        val value = style.bounded()
+        return copy(layerStyles = if (value == StampLayerStyle()) layerStyles - group else layerStyles + (group to value))
     }
 
     fun toJson(): String = JSONObject()
@@ -182,6 +219,7 @@ data class StampTemplate(
         .put("showLogo", showLogo)
         .put("showCompany", showCompany)
         .put("showTitle", showTitle)
+        .put("showProject", showProject)
         .put("showSite", showSite)
         .put("showAddress", showAddress)
         .put("addressParts", JSONArray(addressParts.map { it.name }))
@@ -193,6 +231,7 @@ data class StampTemplate(
         .put("showStyledNote", showStyledNote)
         .put("showWeather", showWeather)
         .put("showMap", showMap)
+        .put("onlineMap", onlineMap)
         .put("showAltitude", showAltitude)
         .put("showCompass", showCompass)
         .put("logoShape", logoShape.name)
@@ -215,6 +254,15 @@ data class StampTemplate(
         .put("logoOffset", logoOffset.bounded().toJson())
         .put("clockOffset", clockOffset.bounded().toJson())
         .put("detailsOffset", detailsOffset.bounded().toJson())
+        .put("layerEditing", layerEditing)
+        .put("layerOffsets", JSONObject(layerOffsets.mapKeys { it.key.name }.mapValues { it.value.bounded().toJson() }))
+        .put("layerStyles", JSONObject(layerStyles.mapKeys { it.key.name }.mapValues { (_, style) ->
+            val value = style.bounded()
+            JSONObject().put("scale", value.scale.toDouble()).put("opacity", value.opacity.toDouble())
+                .put("color", value.colorArgb)
+                .put("typography", value.typography?.name)
+        }))
+        .put("mapZoom", mapZoom.boundedStampValue(0.6f, 2f).toDouble())
         .toString()
 
     companion object {
@@ -251,6 +299,7 @@ data class StampTemplate(
                 showLogo = data.optBoolean("showLogo", true),
                 showCompany = data.optBoolean("showCompany", true),
                 showTitle = data.optBoolean("showTitle", true),
+                showProject = if (data.isNull("showProject")) null else data.optBoolean("showProject"),
                 showSite = data.optBoolean("showSite", true),
                 showAddress = data.optBoolean("showAddress", true),
                 addressParts = data.optJSONArray("addressParts")?.let { parts ->
@@ -269,6 +318,7 @@ data class StampTemplate(
                 showStyledNote = data.optBoolean("showStyledNote", false),
                 showWeather = data.optBoolean("showWeather", false),
                 showMap = data.optBoolean("showMap", false),
+                onlineMap = data.optBoolean("onlineMap", true),
                 showAltitude = data.optBoolean("showAltitude", false),
                 showCompass = data.optBoolean("showCompass", false),
                 logoShape = data.enum<StampLogoShape>("logoShape") ?: StampLogoShape.SQUARE,
@@ -291,6 +341,24 @@ data class StampTemplate(
                 logoOffset = data.offset("logoOffset"),
                 clockOffset = data.offset("clockOffset"),
                 detailsOffset = data.offset("detailsOffset"),
+                layerEditing = data.optBoolean("layerEditing"),
+                layerOffsets = data.optJSONObject("layerOffsets")?.let { offsets ->
+                    StampGroup.entries.filter { offsets.optJSONObject(it.name) != null }
+                        .associateWith { offsets.offset(it.name) }
+                }.orEmpty(),
+                layerStyles = data.optJSONObject("layerStyles")?.let { styles ->
+                    StampGroup.entries.mapNotNull { group ->
+                        styles.optJSONObject(group.name)?.let {
+                            group to StampLayerStyle(
+                                it.optDouble("scale", 1.0).toFloat(),
+                                it.optDouble("opacity", 1.0).toFloat(),
+                                it.color("color"),
+                                StampTypography.entries.firstOrNull { font -> font.name == it.optString("typography") },
+                            ).bounded()
+                        }
+                    }.toMap()
+                }.orEmpty(),
+                mapZoom = data.optDouble("mapZoom", 1.0).toFloat().boundedStampValue(0.6f, 2f),
             )
         }
     }

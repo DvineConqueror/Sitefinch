@@ -115,9 +115,64 @@ class StampCopyTest {
     }
 
     @Test
+    fun editableFieldsAndMapRenderIndependentTransforms() {
+        val template = StampTemplate(
+            StampPreset.COMPLETION,
+            heading = "Completed",
+            organization = "Field crew",
+            worker = "Ada",
+            employeeNumber = "314",
+            layout = StampLayout.PLAIN,
+            position = StampPosition.TOP_LEFT,
+            showTime = false,
+            showMap = true,
+            layerEditing = true,
+        )
+        val map = Bitmap.createBitmap(320, 176, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.BLUE) }
+        val output = Bitmap.createBitmap(640, 880, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(output)
+        val bounds = mutableMapOf<StampGroup, RectF>()
+        val collectBounds: (StampGroup, RectF) -> Unit = { group, rect -> bounds[group] = RectF(rect) }
+        val details = stampDetails("Project", "", 0L, 0, null, template, map = map)
+        try {
+            drawStamp(canvas, output.width, output.height, details, onBounds = collectBounds)
+            val initial = bounds.toMap()
+            assertTrue(initial.getValue(StampGroup.EMPLOYEE).bottom < initial.getValue(StampGroup.EMPLOYEE_NUMBER).top)
+            val edited = template
+                .withOffset(StampGroup.TITLE, StampOffset(0.3f, 0f))
+                .withLayerStyle(StampGroup.TITLE, StampLayerStyle(colorArgb = Color.RED))
+                .withOffset(StampGroup.MAP, StampOffset(0.08f, 0.2f))
+                .withLayerStyle(StampGroup.MAP, StampLayerStyle(scale = 1.25f, opacity = 0.5f))
+            assertEquals(edited, StampTemplate.fromJson(edited.toJson()))
+
+            output.eraseColor(Color.TRANSPARENT)
+            bounds.clear()
+            drawStamp(canvas, output.width, output.height, details.copy(template = edited), onBounds = collectBounds)
+            assertEquals(initial.getValue(StampGroup.COMPANY), bounds.getValue(StampGroup.COMPANY))
+            val titleRect = bounds.getValue(StampGroup.TITLE)
+            assertTrue(titleRect.left > initial.getValue(StampGroup.TITLE).left + 120f)
+            assertTrue((titleRect.top.toInt() until titleRect.bottom.toInt()).any { y ->
+                (titleRect.left.toInt() until titleRect.right.toInt()).any { x ->
+                    val pixel = output.getPixel(x, y)
+                    Color.red(pixel) > 220 && Color.green(pixel) < 20 && Color.blue(pixel) < 20
+                }
+            })
+            val mapRect = bounds.getValue(StampGroup.MAP)
+            assertTrue(mapRect.top > initial.getValue(StampGroup.MAP).top + 150f)
+            assertTrue(mapRect.width() > initial.getValue(StampGroup.MAP).width())
+            val mapPixel = output.getPixel(mapRect.centerX().toInt(), mapRect.centerY().toInt())
+            assertTrue(Color.alpha(mapPixel) in 127..128)
+            assertEquals(255, Color.blue(mapPixel))
+        } finally {
+            output.recycle()
+            map.recycle()
+        }
+    }
+
+    @Test
     fun offlineMapLoadsFromThePackagedAsset() = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val fix = LocationFix(16.07, 120.4, 18.0, 0, "precise")
+        val fix = LocationFix(14.60, 120.98, 18.0, 0, "precise")
         val map = checkNotNull(renderStampMap(context, fix))
         try {
             assertEquals(320, map.width)
@@ -125,6 +180,22 @@ class StampCopyTest {
             assertTrue(map.getPixel(20, 20) != map.getPixel(map.width / 2, map.height / 2))
         } finally {
             map.recycle()
+        }
+    }
+
+    @Test
+    fun pangasinanStreetMapUsesTheRequestedZoom() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val fix = LocationFix(16.04, 120.34, 20.0, 0, "precise")
+        val neighborhood = checkNotNull(renderStampMap(context, fix))
+        val closeUp = checkNotNull(renderStampMap(context, fix, zoom = 2f))
+        try {
+            assertEquals(neighborhood.width, neighborhood.height)
+            assertEquals(neighborhood.width, closeUp.width)
+            assertTrue(!neighborhood.sameAs(closeUp))
+        } finally {
+            neighborhood.recycle()
+            closeUp.recycle()
         }
     }
 

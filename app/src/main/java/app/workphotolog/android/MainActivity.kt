@@ -345,7 +345,7 @@ private fun CameraPage(model: WorkPhotoModel, project: Project?) {
             model.message("Open Android Settings to turn on device location.")
         }
     }
-    val previewMap = rememberStampMap(template.showMap || showTemplates, previewFix)
+    val previewMap = rememberStampMap(template.showMap, previewFix, template.mapZoom, template.onlineMap)
     val cameraRequest = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
         cameraGranted = it
     }
@@ -731,7 +731,6 @@ private fun CameraPage(model: WorkPhotoModel, project: Project?) {
                     offset = ZoneId.systemDefault().rules.getOffset(instant).totalSeconds / 60,
                     location = previewFix,
                     headingDegrees = heading,
-                    map = previewMap,
                     recordedAddress = previewAddress,
                 )
             },

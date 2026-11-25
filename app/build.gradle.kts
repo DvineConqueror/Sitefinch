@@ -58,8 +58,8 @@ android {
         applicationId = "app.workphotolog.android"
         minSdk = androidMinimumApi
         targetSdk = 36
-        versionCode = 10
-        versionName = "0.6.3"
+        versionCode = 11
+        versionName = "0.7.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
