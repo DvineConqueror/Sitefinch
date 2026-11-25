@@ -179,8 +179,13 @@ pub fn write_project_zip(
         }
     }
     archive.start_file("manifest.json", options)?;
-    serde_json::to_writer_pretty(&mut archive, &manifest)?;
-    archive.write_all(b"\n")?;
+    {
+        // Batch the serializer's small writes before they reach the ZIP entry and file.
+        let mut manifest_writer = io::BufWriter::new(&mut archive);
+        serde_json::to_writer_pretty(&mut manifest_writer, &manifest)?;
+        manifest_writer.write_all(b"\n")?;
+        manifest_writer.flush()?;
+    }
     archive.finish()?.sync_all()?;
     temporary
         .persist_noclobber(destination)
