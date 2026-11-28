@@ -297,9 +297,8 @@ fun drawStamp(
     val map = details.map?.takeIf { template.showMap && !it.isRecycled }
     val logoStyle = template.styleFor(StampGroup.LOGO).bounded()
     val mapStyle = template.styleFor(StampGroup.MAP).bounded()
-    val mapAspect = if (map != null) map.width.toFloat() / map.height else 1f
-    val mapHeight = if (map != null) minOf(font * 6.8f * mapStyle.scale, contentWidth / mapAspect) else 0f
-    val mapWidth = mapHeight * mapAspect
+    // Use the same layout space for street maps, regional maps, and a missing fix.
+    val mapSize = if (template.showMap) minOf(font * 6.8f * mapStyle.scale, contentWidth.toFloat()) else 0f
     val logoEdge = if (logo != null) minOf(font * 3.15f * logoStyle.scale, contentWidth * 0.26f * logoStyle.scale) else 0f
     val logoSpace = if (logo != null) logoEdge + padding else 0f
     val headerWidth = (contentWidth - logoSpace).roundToInt().coerceAtLeast(1)
@@ -313,6 +312,7 @@ fun drawStamp(
         lineWidth: Int = contentWidth,
         clockDigits: Boolean = false,
         group: StampGroup = StampGroup.DETAILS,
+        reserveSpace: Boolean = false,
     ): StampLine {
         val style = template.styleFor(group).bounded()
         val layerColor = style.colorArgb?.opaque() ?: color
@@ -335,14 +335,15 @@ fun drawStamp(
                 )
             }
         }
-        return StampLine(
-            StaticLayout.Builder.obtain(text, 0, text.length, paint, lineWidth)
+        fun layout(value: String) =
+            StaticLayout.Builder.obtain(value, 0, value.length, paint, lineWidth)
                 .setEllipsize(TextUtils.TruncateAt.END)
                 .setMaxLines(lines)
                 .setIncludePad(false)
-                .build(),
-            group,
-        )
+                .build()
+        val textLayout = layout(text)
+        val reservedHeight = if (reserveSpace) layout(List(lines) { " " }.joinToString("\n")).height else 0
+        return StampLine(textLayout, group, maxOf(textLayout.height, reservedHeight), text.isNotBlank())
     }
 
     fun field(value: String, visible: Boolean): String = if (visible) value.trim().boundedStampText() else ""
@@ -406,14 +407,17 @@ fun drawStamp(
             addField(StampGroup.EMPLOYEE, employeeName)
             addField(StampGroup.EMPLOYEE_NUMBER, employeeNumber)
             if (clockTime != null || !highlightsSite) addField(StampGroup.SITE, site)
-            addField(StampGroup.ADDRESS, address)
+            if (address.isNotBlank() || template.showMap && template.showAddress) {
+                add(line(address, font, secondaryTextColor, lines = 2, group = StampGroup.ADDRESS,
+                    reserveSpace = template.showMap))
+            }
             if (!timeFirst && template.layout != StampLayout.LEDGER) addTime()
         } else {
             if (timeFirst) {
                 if (clockTime == null) addTime()
                 val place = joinStampText(
                     site.takeUnless { clockTime == null && it == highlight }.orEmpty(),
-                    address,
+                    address.takeUnless { template.showMap }.orEmpty(),
                 )
                 val subject = if (clockTime != null) joinStampText(title, project)
                     else project.takeUnless { it == highlight }.orEmpty()
@@ -424,12 +428,14 @@ fun drawStamp(
             }
             if (context.isNotBlank()) add(line(context, font, secondaryTextColor, lines = 2))
             if (template.layout != StampLayout.LEDGER && !timeFirst) addTime()
-            if (!timeFirst && address.isNotBlank()) {
-                add(line("Address · $address", font, secondaryTextColor, lines = 2))
+            if (template.showMap && template.showAddress || !timeFirst && address.isNotBlank()) {
+                val addressText = if (!timeFirst && address.isNotBlank()) "Address · $address" else address
+                add(line(addressText, font, secondaryTextColor, lines = 2, reserveSpace = template.showMap))
             }
         }
-        if (template.showCoordinates) details.location?.let {
-            add(line(it, font, secondaryTextColor, group = layer(StampGroup.COORDINATES)))
+        if (template.showCoordinates && (details.location != null || template.showMap)) {
+            add(line(details.location.orEmpty(), font, secondaryTextColor, group = layer(StampGroup.COORDINATES),
+                reserveSpace = template.showMap))
         }
         val altitude = details.altitudeMeters?.takeIf { template.showAltitude && it.isFinite() }
             ?.let { String.format(Locale.getDefault(), "Altitude · %,.0f m", it) }.orEmpty()
@@ -438,9 +444,12 @@ fun drawStamp(
                 val angle = ((it % 360 + 360) % 360).roundToInt() % 360
                 "Compass · ${angle}° magnetic"
             }.orEmpty()
-        if (template.layerEditing) {
-            if (altitude.isNotBlank()) add(line(altitude, font, secondaryTextColor, group = StampGroup.ALTITUDE))
-            if (compass.isNotBlank()) add(line(compass, font, secondaryTextColor, group = StampGroup.COMPASS))
+        if (template.layerEditing || template.showMap) {
+            if (altitude.isNotBlank() || template.showMap && template.showAltitude) {
+                add(line(altitude, font, secondaryTextColor, group = layer(StampGroup.ALTITUDE),
+                    reserveSpace = template.showMap))
+            }
+            if (compass.isNotBlank()) add(line(compass, font, secondaryTextColor, group = layer(StampGroup.COMPASS)))
         } else {
             val instruments = joinStampText(altitude, compass)
             if (instruments.isNotBlank()) add(line(instruments, font, secondaryTextColor, lines = 2))
@@ -478,15 +487,16 @@ fun drawStamp(
         }
     }
 
-    if (header.isEmpty() && metadata.isEmpty() && logo == null && map == null) return
+    val hasVisibleMetadata = metadata.any(StampLine::visible)
+    if (header.isEmpty() && !hasVisibleMetadata && logo == null && map == null) return
 
     val headerHeight = maxOf(logoEdge, header.stampHeight(gap))
     val metadataHeight = metadata.stampHeight(gap)
-    val hasBody = metadata.isNotEmpty() || map != null
+    val hasBody = metadata.isNotEmpty() || mapSize > 0f
     val divider = (template.layout == StampLayout.LEDGER || ticket) && headerHeight > 0f && hasBody
     val sectionGap = if (headerHeight == 0f || !hasBody) 0f else if (divider) font * 0.73f else gap
-    val mapGap = if (map != null && metadata.isNotEmpty()) gap * 2 else 0f
-    val cardHeight = 2 * padding + headerHeight + sectionGap + metadataHeight + mapGap + mapHeight
+    val mapGap = if (mapSize > 0f && metadata.isNotEmpty()) gap * 2 else 0f
+    val cardHeight = 2 * padding + headerHeight + sectionGap + metadataHeight + mapGap + mapSize
     val left = if (template.position.right) width - inset - cardWidth else inset
     val top = if (template.position.bottom) height - inset - cardHeight else inset
     val card = RectF(left, top, left + cardWidth, top + cardHeight)
@@ -505,23 +515,36 @@ fun drawStamp(
             else contentLeft + contentWidth - logoEdge
         RectF(logoLeft, contentTop, logoLeft + logoEdge, contentTop + logoEdge)
     }
-    val mapRect = map?.let {
+    val mapSlot = if (mapSize > 0f) {
         val mapTop = bodyTop + metadataHeight + mapGap
-        RectF(contentLeft, mapTop, contentLeft + mapWidth, mapTop + mapHeight)
-    }
+        RectF(contentLeft, mapTop, contentLeft + mapSize, mapTop + mapSize)
+    } else null
+    val mapRect = if (map != null && mapSlot != null) {
+        val scale = mapSize / maxOf(map.width, map.height)
+        RectF(mapSlot.left, mapSlot.top, mapSlot.left + map.width * scale, mapSlot.top + map.height * scale)
+    } else null
     val stampRows = buildList {
         addStampRows(header, headerLeft, contentTop, gap)
         addStampRows(metadata, contentLeft, bodyTop, gap)
     }
 
     val groups = mutableMapOf<StampGroup, RectF>()
-    fun include(group: StampGroup, rect: RectF) {
+    val visibleGroups = mutableMapOf<StampGroup, RectF>()
+    fun include(group: StampGroup, rect: RectF, visibleRect: RectF? = rect) {
         val fitted = rect.stampFit(fit, anchorX, anchorY)
         groups.getOrPut(group) { RectF(fitted) }.union(fitted)
+        if (visibleRect != null) {
+            val visible = visibleRect.stampFit(fit, anchorX, anchorY)
+            visibleGroups.getOrPut(group) { RectF(visible) }.union(visible)
+        }
     }
     logoRect?.let { include(StampGroup.LOGO, it) }
-    mapRect?.let { include(StampGroup.MAP, it) }
-    for (row in stampRows) include(row.line.group, row.bounds)
+    mapSlot?.let { include(StampGroup.MAP, it, mapRect) }
+    for (row in stampRows) {
+        val bounds = row.bounds
+        include(row.line.group, RectF(bounds).apply { bottom = top + row.line.height },
+            bounds.takeIf { row.line.visible })
+    }
 
     val legacyDetailsBounds = if (!template.layerEditing && !template.layerOffsets.containsKey(StampGroup.MAP)) {
         groups[StampGroup.DETAILS]?.let { detailsBounds ->
@@ -535,15 +558,26 @@ fun drawStamp(
         }
         template.offsetFor(group).toPixels(width, height).clampToFrame(clampBounds, width, height)
     }
-    val panel = if (background != null) card.stampFit(fit, anchorX, anchorY) else null
+    val fullPanel = if (background != null) card.stampFit(fit, anchorX, anchorY) else null
+    val panel = fullPanel?.let { RectF(it) }
     val whole = RectF()
-    panel?.let { whole.set(it) }
+    fullPanel?.let { whole.set(it) }
     if (divider) {
         whole.union(RectF(contentLeft, dividerY, contentLeft + contentWidth, dividerY + 1f).stampFit(fit, anchorX, anchorY))
     }
     for ((group, rect) in groups) {
         val moved = rect.shifted(groupMoves.getValue(group))
         whole.union(moved)
+    }
+    if (panel != null && template.showMap) {
+        val visible = RectF()
+        for ((group, rect) in visibleGroups) visible.union(rect.shifted(groupMoves.getValue(group)))
+        val margin = padding * fit
+        panel.top = (visible.top - margin).coerceAtLeast(0f)
+        panel.bottom = (visible.bottom + margin).coerceAtMost(height.toFloat())
+    }
+    for ((group, rect) in visibleGroups) {
+        val moved = rect.shifted(groupMoves.getValue(group))
         if (panel != null && !panel.contains(moved)) {
             val margin = padding * fit
             panel.union(
@@ -556,9 +590,13 @@ fun drawStamp(
     }
     panel?.let { whole.union(it) }
     val wholeMove = template.stampOffset.toPixels(width, height).clampToFrame(whole, width, height)
-    onBounds?.invoke(StampGroup.WHOLE, whole.shifted(wholeMove))
+    if (onBounds != null) {
+        val renderedBounds = panel?.let(::RectF) ?: RectF()
+        for ((group, rect) in visibleGroups) renderedBounds.union(rect.shifted(groupMoves.getValue(group)))
+        onBounds(StampGroup.WHOLE, renderedBounds.shifted(wholeMove))
+    }
     onOffset?.invoke(StampGroup.WHOLE, wholeMove.normalized(width, height))
-    for ((group, rect) in groups) {
+    for ((group, rect) in visibleGroups) {
         val adjustment = groupMoves.getValue(group)
         onBounds?.invoke(group, rect.shifted(adjustment).shifted(wholeMove))
         onOffset?.invoke(group, adjustment.normalized(width, height))
@@ -599,12 +637,13 @@ fun drawStamp(
                     drawStampLogo(this, logo, template.logoZoom, template.logoShape, logoRect, paint)
                 }
             }
-            if (divider) {
+            if (divider && (hasVisibleMetadata || map != null)) {
                 paint.color = accent.withStampAlpha(140)
                 paint.strokeWidth = (unit * 0.003f).coerceAtLeast(1f)
                 drawLine(contentLeft, dividerY, contentLeft + contentWidth, dividerY, paint)
             }
             for (row in stampRows) {
+                if (!row.line.visible) continue
                 val move = groupMoves.getValue(row.line.group)
                 withTranslation(row.x + move.x / fit, row.y + move.y / fit) {
                     row.line.layout.draw(this)
@@ -624,7 +663,7 @@ fun drawStamp(
 private fun joinStampText(vararg fields: String): String =
     fields.filter { it.isNotBlank() }.joinToString(" · ")
 
-private data class StampLine(val layout: StaticLayout, val group: StampGroup)
+private data class StampLine(val layout: StaticLayout, val group: StampGroup, val height: Int, val visible: Boolean)
 
 private data class StampRow(val line: StampLine, val x: Float, val y: Float) {
     val bounds: RectF
@@ -640,13 +679,13 @@ private data class StampRow(val line: StampLine, val x: Float, val y: Float) {
 }
 
 private fun List<StampLine>.stampHeight(gap: Float): Float =
-    sumOf { it.layout.height } + (size - 1).coerceAtLeast(0) * gap
+    sumOf { it.height } + (size - 1).coerceAtLeast(0) * gap
 
 private fun MutableList<StampRow>.addStampRows(lines: List<StampLine>, left: Float, top: Float, gap: Float) {
     var y = top
     for (line in lines) {
         add(StampRow(line, left, y))
-        y += line.layout.height + gap
+        y += line.height + gap
     }
 }
 

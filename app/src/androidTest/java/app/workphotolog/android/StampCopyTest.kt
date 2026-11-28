@@ -170,6 +170,54 @@ class StampCopyTest {
     }
 
     @Test
+    fun losingLocationKeepsTheStampLayersInPlace() {
+        val template = StampTemplate(
+            StampPreset.SITE_VISIT,
+            heading = "Inspection",
+            organization = "Field crew",
+            worker = "Ada",
+            layout = StampLayout.PANEL,
+            position = StampPosition.BOTTOM_LEFT,
+            showMap = true,
+            showCoordinates = true,
+            showAltitude = true,
+            layerEditing = true,
+            recordedAddress = mapOf(AddressPart.CITY to "Dagupan", AddressPart.PROVINCE to "Pangasinan"),
+        ).withOffset(StampGroup.EMPLOYEE, StampOffset(0.24f, -0.04f))
+        val fix = LocationFix(16.04, 120.34, 20.0, 0, "precise", altitudeMeters = 8.0)
+        val output = Bitmap.createBitmap(640, 880, Bitmap.Config.ARGB_8888)
+        val street = Bitmap.createBitmap(384, 384, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.BLUE) }
+        val regional = Bitmap.createBitmap(320, 176, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.BLUE) }
+        fun render(location: LocationFix?, map: Bitmap?): Map<StampGroup, RectF> {
+            output.eraseColor(Color.TRANSPARENT)
+            return buildMap {
+                val details = stampDetails("Project", "Flashing checked", 0L, 0, location, template, map = map)
+                drawStamp(Canvas(output), output.width, output.height, details,
+                    onBounds = { group, bounds -> put(group, bounds) })
+            }
+        }
+        try {
+            val online = render(fix, street)
+            val offline = render(fix, regional)
+            val withoutLocation = render(null, null)
+            for (group in listOf(StampGroup.TITLE, StampGroup.CLOCK, StampGroup.EMPLOYEE, StampGroup.NOTE)) {
+                assertEquals(online.getValue(group), offline.getValue(group))
+                assertEquals(online.getValue(group), withoutLocation.getValue(group))
+            }
+            for (group in listOf(StampGroup.MAP, StampGroup.ADDRESS, StampGroup.COORDINATES, StampGroup.ALTITUDE)) {
+                assertTrue(group in online)
+                assertTrue(group !in withoutLocation)
+            }
+            val formerMap = online.getValue(StampGroup.MAP)
+            assertEquals(Color.TRANSPARENT, output.getPixel(formerMap.centerX().toInt(), formerMap.centerY().toInt()))
+        } finally {
+            output.recycle()
+            street.recycle()
+            regional.recycle()
+        }
+    }
+
+    @Test
     fun offlineMapLoadsFromThePackagedAsset() = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val fix = LocationFix(14.60, 120.98, 18.0, 0, "precise")
